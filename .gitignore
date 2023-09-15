@@ -1,3 +1,4 @@
 /venv/
 /tlsim2/__pycache__/
 /tlsim2/deprecated/
+/example_notebooks/.ipynb_checkpoints/
