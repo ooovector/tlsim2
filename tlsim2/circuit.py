@@ -61,7 +61,7 @@ class Circuit:
 
     def get_system_licri(self, element_mask: List = None):
         """
-        Returns inverse inductance (li), capcacitance (c) and resistance matrices (r) of system, including only
+        Returns inverse inductance (li), inverse Josephson inductance (lji), capacitance (c) and resistance matrices (r) of system, including only
         contributions by circuit elements in element_mask (all elements, if element_mask is None)
         :param element_mask:
         :return:
@@ -103,7 +103,11 @@ class Circuit:
                 for terminal, node in self.terminal_nodes.items()}
 
     def compute_system_modes(self, num_modes=None):
+        """
+        Compute system modes in linear approximation
+        """
         li, c, ri, node_names = self.get_system_licri()
+        li = li
         zeros = np.zeros_like(li)
         identity = np.identity(li.shape[0])
 
@@ -181,7 +185,7 @@ class Circuit:
         return np.asarray(element_energies)/np.asarray(total_energies)
 
     def make_element(self, nodes: Mapping[Any, Any], cutoff_low: float = 1e3, cutoff_high: float = 1e11):
-        from subcircuit import Subcircuit
+        from .subcircuit import Subcircuit
         """
         Returns a Subcircuit element based on this circuit. Used for building larger circuits from smaller elements.
         :param nodes: dict of circuit nodes to new element modes
@@ -199,3 +203,138 @@ class Circuit:
         modes = {mode_id: modes[:, mode_id] for mode_id in range(modes.shape[1])}
 
         return Subcircuit(self, modes=modes, nodes=nodes)
+
+    def element_node_mapping(self, element):
+        input_nodes, output_nodes = [], []
+        for terminal in self.connections[element.name]:
+            if terminal[0] == 'i':
+                input_nodes.append(self.connections[element.name][terminal])
+            else:
+                output_nodes.append(self.connections[element.name][terminal])
+        return input_nodes, output_nodes
+
+    def flux_connections_matrix(self, flux_zero_elements):
+        """
+        Returns matrix A of flux connection equations in form A \vec{Phi} = 0, where \vec{Phi} is a node fluxes vector
+        """
+        node_names, connections = self.connections_circuit()
+        constraint_equations = []
+        for element in self.elements.values():
+            flux_equation = np.zeros((len(node_names)))
+            if element.type_ in flux_zero_elements:
+                input_nodes, output_nodes = self.element_node_mapping(element)
+                input_nodes_ids = [node_names.index(node) if node in node_names else None \
+                                   for node in input_nodes]
+                output_nodes_ids = [node_names.index(node) if node in node_names else None \
+                                    for node in output_nodes]
+                if element.lumped:
+                    if input_nodes_ids[0] is not None:
+                        flux_equation[input_nodes_ids[0]] = 1
+                    if output_nodes_ids[0] is not None:
+                        flux_equation[output_nodes_ids[0]] = -1
+                    constraint_equations.append(flux_equation)
+                else:
+                    raise NotImplementedError
+
+        flux_connections_matrix = np.zeros((len(constraint_equations), len(node_names)))
+        for i, v in enumerate(constraint_equations):
+            flux_connections_matrix[i, :] = v
+        return flux_connections_matrix
+
+    @staticmethod
+    def gauss_jordan_elimination(mat):
+        """
+        The method provides Gauss-Jordan elimination for matrix in the form (A|b)
+        to find fundamental system of solutions
+        :param mat: matrix in the form (A|b)
+        """
+        def p_ij_mapping(mat, i, j):
+            """
+            Swap two rows
+            """
+            mat[[i, j]] = mat[[j, i]]
+
+        def d_i_lamda(mat, i, lamda):
+            """
+            Multiply row by lamda
+            """
+            mat[i] = np.asarray([a * lamda for a in mat[i]])
+
+        def t_ij_lamda(mat, i, j, lamda):
+            """
+            Add to row i another multiplied row
+            """
+            mat[i] = np.asarray([(a + b * lamda) for a, b in zip(mat[i], mat[j])])
+
+        count = 0
+        order = []
+        n = mat.shape[1] - 1  # number of variables
+        m = mat.shape[1]  # number of equations
+        r = 0
+        for j in range(mat.shape[1]):
+            column = mat[count:, j]
+            if np.all(column == 0):
+                continue
+            order.append(j)
+            r += 1
+            for i in range(count, mat.shape[0]):
+                # find pivot element in this column
+                aij = mat[i, j]
+                if aij != 0:
+                    p_ij_mapping(mat, count, i)
+                    d_i_lamda(mat, count, 1 / aij)
+                    break
+            for k in range(mat.shape[0]):
+                if k != count:
+                    a_kj = mat[k, j]
+                    t_ij_lamda(mat, k, count, -a_kj)
+            count += 1
+        # print(order)
+        # make new order of x vector
+        for indx in range(mat.shape[1]):
+            if indx not in order:
+                order.append(indx)
+        # print(mat)
+        mat = mat[:, order]
+        # print(r)
+        # Er = mat[:r, :r]
+        Phi = mat[:r, r:-1]
+        b = np.hstack(mat[:r, -1])
+        fss_mat = np.vstack((-Phi, np.eye(Phi.shape[1])))
+        b = np.hstack((b, np.zeros(m-r)))
+        # print(order)
+        # reorder for the first variables
+        order_in = [i for i in range(m)]
+        reorder = [order.index(order_in[i]) for i in range(m)]
+        mat = mat[:, reorder]
+        fss_mat = fss_mat[reorder[:-1], :]
+        b = b[reorder[:-1]]
+        return mat, fss_mat, b
+
+    def define_subspaces(self, subspace_type):
+        """
+        This method defines free, frozen or periodic subspaces.
+        Free subspace is corresponding to free particles (without potential). Free variables are generated by isolated
+        islands formed by capacitors.
+        Frozen variables are corresponding to massless particles with potential energy.
+        Periodic variables formed by superconducting islands where charge tunneling is possible.
+        """
+        if subspace_type not in ['free', 'frozen', 'periodic']:
+            raise ValueError('Subspace type should be free, frozen or periodic!')
+        flux_zero_elements = {'free': ['L', 'JJ', 'R'], 'frozen': ['C', 'JJ'], 'periodic': ['L', 'R']}
+        flux_connections_matrix = self.flux_connections_matrix(flux_zero_elements[subspace_type])
+        free_column = np.zeros(flux_connections_matrix.shape[0]).reshape(flux_connections_matrix.shape[0], 1)
+        mat = np.hstack((flux_connections_matrix, free_column))
+        mat, fss_mat, b = self.gauss_jordan_elimination(mat)
+        return mat, fss_mat, b
+
+    def get_variable_transformation(self):
+        _, fss_free, _ = self.define_subspaces('free')
+        _, fss_frozen, _ = self.define_subspaces('frozen')
+        _, fss_periodic, _ = self.define_subspaces('periodic')
+        fss_types = ['f'] * fss_free.shape[1] + ['c'] * fss_frozen.shape[1] + ['p'] * fss_periodic.shape[1]
+        return np.hstack((fss_free, fss_frozen, fss_periodic)).T, fss_types
+
+
+
+

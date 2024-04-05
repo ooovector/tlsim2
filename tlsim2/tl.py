@@ -1,9 +1,9 @@
 from __future__ import annotations
-from poly_exponent import PolyExponent, poly_exponent_complex
+from .poly_exponent import PolyExponent, poly_exponent_complex
 from fractions import Fraction
-from basis import LinearHull
+from .basis import LinearHull
 from typing import Iterable, Union, Mapping
-from field_distribution import FieldDistribution
+from .field_distribution import FieldDistribution
 import numpy as np
 from functools import cache
 
@@ -159,6 +159,9 @@ class MultiTransmissionLine:
         if basis is None:
             basis = default_tl_basis(n=self.n)
         self.set_basis(basis)
+
+        self.lumped = False
+        self.type_ = 'TL'
 
     def set_basis(self, basis):
         self.basis = basis
