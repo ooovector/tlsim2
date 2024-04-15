@@ -4,7 +4,7 @@ from scipy.linalg import pinv, eig
 from scipy.sparse.linalg import eigs
 from typing import List, Mapping, Any
 from collections import OrderedDict
-
+from scipy.constants import h, hbar, e
 from matplotlib import pyplot as plt
 
 
@@ -21,6 +21,18 @@ class Circuit:
         self.solution_valid = False
         self.w = None
         self.v = None
+
+        self.li = None
+        self.c = None
+        self.ri = None
+        self.ci = None
+        self.node_names = []
+        self.linear_coordinate_transform = np.asarray(0)
+        self.variables_types = []
+
+        self.variables = []
+        self.phase_periods = 7  # phase periods for extended variables
+        self.nodeNo = 128
 
     def short(self, node):
         self.shorted_nodes.append(node)
@@ -47,7 +59,7 @@ class Circuit:
     def connections_circuit(self):
         node_names = [name for name in self.node_names if name not in self.shorted_nodes]
         connections = {element_name: {k: v for k, v in connection.items()} \
-                            for element_name, connection in self.connections.items()}
+                       for element_name, connection in self.connections.items()}
         # for element_id, element, connection in zip(range(len(self.elements)), self.elements, connections):
         for element in self.elements.values():
             connection = connections[element.name]
@@ -80,7 +92,7 @@ class Circuit:
 
             if element not in element_mask:
                 continue
-            circuit_connection_ids = [node_names.index(connection[t]) if connection[t] in node_names else None\
+            circuit_connection_ids = [node_names.index(connection[t]) if connection[t] in node_names else None \
                                       for t in element.get_terminal_names()]
             li_el, c_el, ri_el = element.get_element_licri()
             for i1, i2 in enumerate(circuit_connection_ids):
@@ -92,7 +104,7 @@ class Circuit:
                     li[i2, j2] += li_el[i1, j1]
                     c[i2, j2] += c_el[i1, j1]
                     ri[i2, j2] += ri_el[i1, j1]
-
+        self.li, self.c, self.li, self.node_names = li, c, ri, node_names
         return li, c, ri, node_names
 
     def get_terminal_names(self):
@@ -115,10 +127,10 @@ class Circuit:
         max_li = np.max(np.abs(li))
         max_c = np.max(np.abs(c))
 
-        li_norm = li/max_li
-        c_norm = c/max_c
+        li_norm = li / max_li
+        c_norm = c / max_c
 
-        ri_norm = ri/np.sqrt(max_li*max_c)
+        ri_norm = ri / np.sqrt(max_li * max_c)
 
         b = np.hstack([
             np.vstack([zeros, identity]),
@@ -134,11 +146,11 @@ class Circuit:
         else:
             w, v = eigs(a, k=num_modes, M=b, which='SM')
 
-        self.w = w*np.sqrt(max_li/max_c)
+        self.w = w * np.sqrt(max_li / max_c)
         self.v = v
         self.solution_valid = True
 
-        return w*np.sqrt(max_li/max_c), v, node_names
+        return w * np.sqrt(max_li / max_c), v, node_names
 
     def system_modes_to_element_modes(self, system_modes, elements):
         node_names, circuit_connections = self.connections_circuit()
@@ -177,12 +189,12 @@ class Circuit:
             modes = self.v
 
         for mode_id in range(modes.shape[1]):
-            voltages = modes[modes.shape[0]//2:, mode_id]
-            phases = modes[:modes.shape[0]//2, mode_id]
-            element_energies.append(np.conj(phases).T@li_el@phases + np.conj(voltages).T@c_el@voltages)
-            total_energies.append(np.conj(phases).T@li@phases + np.conj(voltages).T@c@voltages)
+            voltages = modes[modes.shape[0] // 2:, mode_id]
+            phases = modes[:modes.shape[0] // 2, mode_id]
+            element_energies.append(np.conj(phases).T @ li_el @ phases + np.conj(voltages).T @ c_el @ voltages)
+            total_energies.append(np.conj(phases).T @ li @ phases + np.conj(voltages).T @ c @ voltages)
 
-        return np.asarray(element_energies)/np.asarray(total_energies)
+        return np.asarray(element_energies) / np.asarray(total_energies)
 
     def make_element(self, nodes: Mapping[Any, Any], cutoff_low: float = 1e3, cutoff_high: float = 1e11):
         from .subcircuit import Subcircuit
@@ -198,7 +210,7 @@ class Circuit:
 
         mode_mask = np.logical_and(np.imag(self.w) >= cutoff_low, np.imag(self.w) <= cutoff_high)
 
-        modes = self.v[:self.v.shape[0]//2, :]
+        modes = self.v[:self.v.shape[0] // 2, :]
         modes = modes[:, mode_mask]
         modes = {mode_id: modes[:, mode_id] for mode_id in range(modes.shape[1])}
 
@@ -235,19 +247,39 @@ class Circuit:
                     constraint_equations.append(flux_equation)
                 else:
                     raise NotImplementedError
+            if element.type_ == 'TL':
+                # we consider multi conductor transmission line
+                input_nodes, output_nodes = self.element_node_mapping(element)
+                input_nodes_ids = [node_names.index(node) if node in node_names else None \
+                                   for node in input_nodes]
+                output_nodes_ids = [node_names.index(node) if node in node_names else None \
+                                    for node in output_nodes]
+                if 'L' in flux_zero_elements:
+                    for id_, input_node_id in enumerate(input_nodes_ids):
+                        if input_node_id is not None:
+                            flux_equation[input_nodes_ids[0]] = 1
+                        if output_nodes_ids[id_] is not None:
+                            flux_equation[output_nodes_ids[id_]] = -1
+                        constraint_equations.append(flux_equation)
 
+        # print(constraint_equations)
+        if not len(constraint_equations):
+            constraint_equations = [np.zeros(node_names)]
         flux_connections_matrix = np.zeros((len(constraint_equations), len(node_names)))
         for i, v in enumerate(constraint_equations):
             flux_connections_matrix[i, :] = v
+        # print(flux_connections_matrix)
         return flux_connections_matrix
 
     @staticmethod
-    def gauss_jordan_elimination(mat):
+    def gauss_jordan_elimination(mat, full_output=False):
         """
         The method provides Gauss-Jordan elimination for matrix in the form (A|b)
         to find fundamental system of solutions
         :param mat: matrix in the form (A|b)
+        :param full_output: if True, when returns ordering parameters
         """
+
         def p_ij_mapping(mat, i, j):
             """
             Swap two rows
@@ -294,14 +326,13 @@ class Circuit:
         for indx in range(mat.shape[1]):
             if indx not in order:
                 order.append(indx)
-        # print(mat)
         mat = mat[:, order]
         # print(r)
-        # Er = mat[:r, :r]
+        # Er = mat[:r, :r] # eye matrix
         Phi = mat[:r, r:-1]
-        b = np.hstack(mat[:r, -1])
+        b = mat[:r, -1]
         fss_mat = np.vstack((-Phi, np.eye(Phi.shape[1])))
-        b = np.hstack((b, np.zeros(m-r)))
+        b = np.hstack((b, np.zeros(m - r)))
         # print(order)
         # reorder for the first variables
         order_in = [i for i in range(m)]
@@ -309,7 +340,10 @@ class Circuit:
         mat = mat[:, reorder]
         fss_mat = fss_mat[reorder[:-1], :]
         b = b[reorder[:-1]]
-        return mat, fss_mat, b
+        if full_output:
+            return mat, fss_mat, b, (r, order, reorder)
+        else:
+            return mat, fss_mat, b
 
     def define_subspaces(self, subspace_type):
         """
@@ -321,7 +355,7 @@ class Circuit:
         """
         if subspace_type not in ['free', 'frozen', 'periodic']:
             raise ValueError('Subspace type should be free, frozen or periodic!')
-        flux_zero_elements = {'free': ['L', 'JJ', 'R'], 'frozen': ['C', 'JJ'], 'periodic': ['L', 'R']}
+        flux_zero_elements = {'free': ['L', 'JJ', 'R'], 'frozen': ['C'], 'periodic': ['L', 'R']}
         flux_connections_matrix = self.flux_connections_matrix(flux_zero_elements[subspace_type])
         free_column = np.zeros(flux_connections_matrix.shape[0]).reshape(flux_connections_matrix.shape[0], 1)
         mat = np.hstack((flux_connections_matrix, free_column))
@@ -329,11 +363,137 @@ class Circuit:
         return mat, fss_mat, b
 
     def get_variable_transformation(self):
-        _, fss_free, _ = self.define_subspaces('free')
+        """
+        Create transformation matrix T for free, frozen, periodic and extended variables:
+        φ = Tθ, where T is a square invertible  matrix.
+        """
+        node_names, connections = self.connections_circuit()
         _, fss_frozen, _ = self.define_subspaces('frozen')
+        _, fss_free, _ = self.define_subspaces('free')
         _, fss_periodic, _ = self.define_subspaces('periodic')
-        fss_types = ['f'] * fss_free.shape[1] + ['c'] * fss_frozen.shape[1] + ['p'] * fss_periodic.shape[1]
-        return np.hstack((fss_free, fss_frozen, fss_periodic)).T, fss_types
+        fss_types = ['frozen'] * fss_frozen.shape[1] + ['free'] * fss_free.shape[1] + ['periodic'] * fss_periodic.shape[1]
+        basis = np.hstack((fss_free, fss_frozen, fss_periodic))
+        # print(basis, fss_types)
+        # check linear independency of vector set
+        mat = np.hstack((basis, np.zeros((basis.shape[0], 1))))
+        mat, fss_mat, b, params_ = self.gauss_jordan_elimination(mat, full_output=True)
+        rank = params_[0]
+        order = params_[1][:rank]
+        # print(rank, order)
+        basis = basis[:, order]
+        fss_types = [fss_types[i] for i in order]
+        if basis.shape[1] < len(node_names):
+            # add basis vectors to make transformation matrix invertible (find kernel)
+            mat = np.hstack((basis.T, np.zeros((basis.shape[1], 1))))
+            mat, kernel, b = self.gauss_jordan_elimination(mat)
+            basis = np.hstack((basis, kernel))
+            fss_types += ['extended' for i in range(kernel.shape[1])]
+        self.linear_coordinate_transform = basis
+        self.variables_types = fss_types
+        return basis, fss_types
+
+    def create_quantum_circuit(self):
+        """
+        Create quantum circuit
+        """
+        # make variables transformation
+        li, c, ri, node_names = self.get_system_licri()
+        c_new = np.einsum('ji,jk,kl->il', self.linear_coordinate_transform, c, self.linear_coordinate_transform)
+        li_new = np.einsum('ji,jk,kl->il', self.linear_coordinate_transform, li, self.linear_coordinate_transform)
+        # eliminate frozen variables (because the capacitance matrix is singular in the presence of them)
+        # and free variables
+        indx = len([i for i in self.variables_types if i in ['frozen', 'free']])
+        self.li, self.ci = li_new[indx:, indx:], np.linalg.inv(c_new[indx:, indx:])
+
+        # create quantum variables
+        variables_types = self.variables_types[indx:]
+        self.variables = []  # here we add only periodic and extended variables
+        for i, v in enumerate(variables_types):
+            from .qvariable import QVariable
+            variable = QVariable('θ_{}_{}'.format(i, v))
+            phase_periods = 1 if v == 'periodic' else self.phase_periods
+            variable.create_grid(self.nodeNo, phase_periods)
+            self.variables.append(variable)
+
+    def grid_shape(self):
+        return tuple([v.get_nodeNo() for v in self.variables])
+
+    def create_phase_grid(self):
+        """
+        Creates a n-d grid of the phase variables, where n is the number of variables in the circuit,
+        on which the circuit wavefunction depends.
+        """
+        axes = []
+        for variable in self.variables:
+            axes.append(variable.get_phase_grid())
+        return np.meshgrid(*tuple(axes), indexing='ij')
+
+    def create_charge_grid(self):
+        """
+        Creates a n-d grid of the charge variables, where n is the number of variables in the circuit,
+        on which the circuit wavefunction, when transformed into charge representation, depends.
+        """
+        axes = []
+        for variable in self.variables:
+            axes.append(variable.get_charge_grid())
+        return np.meshgrid(*tuple(axes), indexing='ij')
+
+    def calculate_charge_potential(self):
+        grid_shape = self.grid_shape()
+        grid_size = np.prod(grid_shape)
+        charge_grid = np.reshape(np.asarray(self.create_charge_grid()), (len(self.variables), grid_size))
+        ecmat = 2 * e ** 2 * self.ci
+        self.charge_potential = np.einsum('ij,ik,kj->j', charge_grid, ecmat, charge_grid)
+        self.charge_potential = np.reshape(self.charge_potential, grid_shape)
+        return self.charge_potential
+
+    def calculate_phase_potential(self):
+        grid_shape = self.grid_shape()
+        grid_size = np.prod(grid_shape)
+        phase_grid = np.reshape(np.asarray(self.create_phase_grid()), (len(self.variables), grid_size))
+        Phi0 = h / 2 / e
+        elmat = 1 / 2 * Phi0 ** 2 * self.li / (2 * np.pi) ** 2
+        # liner part of phase potential
+        self.phase_potential = np.einsum('ij,ik,kj->j', phase_grid, elmat, phase_grid)
+
+        node_names, connections = self.connections_circuit()
+        indx = len([i for i in self.variables_types if i in ['frozen', 'free']])
+        node_phases = np.einsum('ij,jk->ik', self.linear_coordinate_transform[:, indx:], phase_grid)
+        # nonlinear part of phase potential
+        for element in self.elements.values():
+            if hasattr(element, 'nonlinear_energy_term'):
+                input_nodes, output_nodes = self.element_node_mapping(element)
+                nodes_indx = [node_names.index(node) if node in node_names else None for node in
+                              input_nodes + output_nodes]
+                element_node_phases = [node_phases[i] if i is not None else np.zeros(node_phases.shape[1]) for i in
+                                       nodes_indx]
+                self.phase_potential += element.nonlinear_energy_term(element_node_phases)
+        self.phase_potential = np.reshape(self.phase_potential, grid_shape)
+        return self.phase_potential
+
+    def hamiltonian_phase_action(self, state_vector):
+        """
+        Implements the action of the hamiltonian on the state vector describing the system in phase representation.
+        :param state_vector: wavefunction to act upon
+        :returns: wavefunction after action of the hamiltonian
+        """
+        psi = np.reshape(state_vector, self.charge_potential.shape)  # wavefunction in phase representation
+        phi = np.fft.fftshift(np.fft.fftn(np.fft.fftshift(psi)))  # wavefunction in charge representation
+        Up = self.phase_potential.ravel()*state_vector
+        Tp = np.fft.ifftshift(np.fft.ifftn(np.fft.ifftshift(self.charge_potential*phi))).ravel()
+        return Tp + Up
+
+    def calculate_potentials(self):
+        """
+        Calculate potentials for Fourier-based hamiltonian action.
+        """
+        self.calculate_phase_potential()
+        self.calculate_charge_potential()
+        from scipy.sparse.linalg import LinearOperator
+        self.hamiltonian = LinearOperator((np.prod(self.grid_shape()), np.prod(self.grid_shape())),
+                                          matvec=self.hamiltonian_phase_action)
+        return self.charge_potential, self.phase_potential
+
 
 
 
