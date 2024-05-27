@@ -1,9 +1,9 @@
 from __future__ import annotations
-from poly_exponent import PolyExponent, poly_exponent_complex
-from fractions import Fraction
-from basis import LinearHull
+from .poly_exponent import PolyExponent, poly_exponent_complex
+from .linear import LinearElement
+from .basis import LinearHull
 from typing import Iterable, Union, Mapping
-from field_distribution import FieldDistribution
+from .field_distribution import FieldDistribution
 import numpy as np
 from functools import cache
 
@@ -146,7 +146,7 @@ class TLFieldDistribution(FieldDistribution):
         return len(self.elements)
 
 
-class MultiTransmissionLine:
+class MultiTransmissionLine(LinearElement):
     def __init__(self, name, n, l, ll, cl, rl=None, gl=None, basis=None):
         self.ll = ll
         self.cl = cl

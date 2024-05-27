@@ -1,6 +1,6 @@
 from typing import List, Any
 import numpy as np
-from field_distribution import FieldDistribution
+from .field_distribution import FieldDistribution
 
 
 class LinearHull:

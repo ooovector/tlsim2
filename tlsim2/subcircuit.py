@@ -2,7 +2,7 @@ import numpy as np
 from abc import abstractmethod
 from scipy.linalg import pinv, eig
 from scipy.sparse.linalg import eigs
-from circuit import Circuit
+from .circuit import Circuit
 from typing import Mapping, Any, Iterable
 from collections import OrderedDict
 

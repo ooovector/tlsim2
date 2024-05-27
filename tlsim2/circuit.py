@@ -181,7 +181,7 @@ class Circuit:
         return np.asarray(element_energies)/np.asarray(total_energies)
 
     def make_element(self, nodes: Mapping[Any, Any], cutoff_low: float = 1e3, cutoff_high: float = 1e11):
-        from subcircuit import Subcircuit
+        from .subcircuit import Subcircuit
         """
         Returns a Subcircuit element based on this circuit. Used for building larger circuits from smaller elements.
         :param nodes: dict of circuit nodes to new element modes
