@@ -33,7 +33,7 @@ class Circuit:
 
         for k, v in connection.items():
             if k not in element.get_terminal_names():
-                raise KeyError('No such connection in element')
+                raise KeyError('No such connection in element: '+str(k))
 
         for node_name in connection.values():
             if node_name not in self.node_names:
@@ -199,3 +199,104 @@ class Circuit:
         modes = {mode_id: modes[:, mode_id] for mode_id in range(modes.shape[1])}
 
         return Subcircuit(self, modes=modes, nodes=nodes)
+
+    def autosplit(self):
+        """
+        Create new circuit consisting of 'subcircuits', breaking apart according to coupling_hints of elements.
+        :return: Circuit consisting of Circuits with the same elements as the parent, except for the elements that
+        are split by according to coupling_hints.
+        """
+        connections_split = []
+
+        for element_name, element in self.elements.items():
+            connections = self.connections[element_name]
+            coupled_nodes = element.get_coupling_hints()
+
+            for terminal1, node1 in connections.items():
+                if node1 in self.shorted_nodes:
+                    continue
+                for terminal2, node2 in connections.items():
+                    if node2 in self.shorted_nodes:
+                        continue
+                    if node1 == node2:
+                        continue
+                    for subsystem in coupled_nodes:
+                        if terminal1 in subsystem and terminal2 in subsystem:
+                            connections_split.append({node1, node2})
+
+        # go bfs
+        subgraphs = []
+        disconnected_nodes = list(
+            set([v for n in self.connections.values() for v in n.values() if v not in self.shorted_nodes]))
+        while len(disconnected_nodes) > 0:
+            subgraph = set()
+            node_stack = [disconnected_nodes[0]]
+            while len(node_stack) > 0:
+                node = node_stack.pop()
+                if node in disconnected_nodes:
+                    disconnected_nodes.remove(node)
+                else:
+                    continue
+                for connection in connections_split:
+                    if node in connection:
+                        node_stack.extend(connection)
+                        subgraph = subgraph | connection
+            subgraphs.append(frozenset(subgraph))
+
+        # split subsystems
+        subsystems = {subgraph: Circuit(name=(self.name, subgraph)) for subgraph in subgraphs}
+        split_system = Circuit(name=(self.name, 'split'))
+
+        circuit_nodes, connections_circuit = self.connections_circuit()
+
+        for element_name, element in self.elements.items():
+            connections = self.connections[element_name]
+
+            splitting = {}
+            for subsystem in subgraphs:
+                part = subsystem & set(connections.values())
+                part_keys = [k for k, v in connections.items() if v in part]
+                if len(part_keys) > 0:
+                    splitting[(element_name, subsystem)] = part_keys
+            if len(splitting) < 2:
+                split_elements = {(k,): element for k in splitting.keys()}
+            else:
+                split_elements = element.split(splitting=splitting)
+            #         print(split_elements)
+
+            for k, splitted_element in split_elements.items():
+                connections_splitted_element = {k2: v for k2, v in connections_circuit[element_name].items()
+                                                if k2 in splitted_element.get_terminal_names()}
+                if len(k) == 1:
+                    #                 system = subsystems[frozenset(connections_splitted_element.values())]
+                    system = subsystems[k[0][1]]
+                else:
+                    system = split_system
+                system.add_element(splitted_element, connections_splitted_element)
+
+        split_system_nodes = split_system.connections_circuit()[0]
+        for subgraph, subsystem in subsystems.items():
+            for s in self.shorted_nodes:
+                if s in subsystem.connections_circuit()[0]:
+                    subsystem.short(s)
+            # need to find which nodes are outward-facing
+            connections = {n: n for n in subsystem.connections_circuit()[0] if n in split_system_nodes}
+            split_system.add_element(subsystem.make_element(connections), connections)
+
+        return split_system
+
+    def find_subsystem_name_by_element(self, element):
+        for name, subsystem_or_element in self.elements.items():
+            if hasattr(subsystem_or_element, 'circuit'):
+                if (element in subsystem_or_element.circuit.elements.values()
+                        or element in subsystem_or_element.circuit.elements.keys()):
+                    return name
+        return None
+
+    def rename_element(self, old_name, new_name):
+        self.connections[new_name] = self.connections[old_name]
+        self.elements[new_name] = self.elements[old_name]
+        self.elements[new_name].name = new_name
+        del self.connections[old_name]
+        del self.elements[old_name]
+

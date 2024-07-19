@@ -147,7 +147,7 @@ class TLFieldDistribution(FieldDistribution):
 
 
 class MultiTransmissionLine(LinearElement):
-    def __init__(self, name, n, l, ll, cl, rl=None, gl=None, basis=None):
+    def __init__(self, name, n, l, ll, cl, rl=None, gl=None, basis=None, coupler_hint=False):
         self.ll = ll
         self.cl = cl
         self.rl = rl
@@ -159,6 +159,7 @@ class MultiTransmissionLine(LinearElement):
         if basis is None:
             basis = default_tl_basis(n=self.n)
         self.set_basis(basis)
+        self.coupler_hint = coupler_hint
 
     def set_basis(self, basis):
         self.basis = basis
@@ -179,6 +180,10 @@ class MultiTransmissionLine(LinearElement):
             terminal_names.append(f'int{i}')
         return terminal_names
 
-    # def get_terminal_modes(self):
-    #     return self.basis_terminals
+    def get_coupling_hints(self):
+        if self.coupler_hint:
+            subsystems = {i: [f'i{i}', f'o{i}'] for i in range(self.n)}
+            return list(self.assign_loose_nodes(subsystems=subsystems).values())
+        else:
+            return [self.get_terminal_names()]
 
