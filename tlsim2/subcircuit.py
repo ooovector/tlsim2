@@ -73,3 +73,6 @@ class Subcircuit:
 
     def get_element_licri(self):
         return self.li, self.c, self.ri
+
+    def get_coupling_hints(self):
+        return [self.get_terminal_names()]

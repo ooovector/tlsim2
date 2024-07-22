@@ -1,6 +1,6 @@
 from __future__ import annotations
 from .poly_exponent import PolyExponent, poly_exponent_complex
-from fractions import Fraction
+from .linear import LinearElement
 from .basis import LinearHull
 from typing import Iterable, Union, Mapping
 from .field_distribution import FieldDistribution
@@ -146,8 +146,8 @@ class TLFieldDistribution(FieldDistribution):
         return len(self.elements)
 
 
-class MultiTransmissionLine:
-    def __init__(self, name, n, l, ll, cl, rl=None, gl=None, basis=None):
+class MultiTransmissionLine(LinearElement):
+    def __init__(self, name, n, l, ll, cl, rl=None, gl=None, basis=None, coupler_hint=False):
         self.ll = ll
         self.cl = cl
         self.rl = rl
@@ -162,6 +162,7 @@ class MultiTransmissionLine:
 
         self.lumped = False
         self.type_ = 'TL'
+        self.coupler_hint = coupler_hint
 
     def set_basis(self, basis):
         self.basis = basis
@@ -182,6 +183,10 @@ class MultiTransmissionLine:
             terminal_names.append(f'int{i}')
         return terminal_names
 
-    # def get_terminal_modes(self):
-    #     return self.basis_terminals
+    def get_coupling_hints(self):
+        if self.coupler_hint:
+            subsystems = {i: [f'i{i}', f'o{i}'] for i in range(self.n)}
+            return list(self.assign_loose_nodes(subsystems=subsystems).values())
+        else:
+            return [self.get_terminal_names()]
 

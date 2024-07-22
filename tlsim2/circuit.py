@@ -45,7 +45,7 @@ class Circuit:
 
         for k, v in connection.items():
             if k not in element.get_terminal_names():
-                raise KeyError('No such connection in element')
+                raise KeyError('No such connection in element: '+str(k))
 
         for node_name in connection.values():
             if node_name not in self.node_names:
@@ -59,7 +59,7 @@ class Circuit:
     def connections_circuit(self):
         node_names = [name for name in self.node_names if name not in self.shorted_nodes]
         connections = {element_name: {k: v for k, v in connection.items()} \
-                       for element_name, connection in self.connections.items()}
+                            for element_name, connection in self.connections.items()}
         # for element_id, element, connection in zip(range(len(self.elements)), self.elements, connections):
         for element in self.elements.values():
             connection = connections[element.name]
@@ -73,7 +73,7 @@ class Circuit:
 
     def get_system_licri(self, element_mask: List = None):
         """
-        Returns inverse inductance (li), inverse Josephson inductance (lji), capacitance (c) and resistance matrices (r) of system, including only
+        Returns inverse inductance (li), capacitance (c) and resistance matrices (r) of system, including only
         contributions by circuit elements in element_mask (all elements, if element_mask is None)
         :param element_mask:
         :return:
@@ -92,7 +92,7 @@ class Circuit:
 
             if element not in element_mask:
                 continue
-            circuit_connection_ids = [node_names.index(connection[t]) if connection[t] in node_names else None \
+            circuit_connection_ids = [node_names.index(connection[t]) if connection[t] in node_names else None\
                                       for t in element.get_terminal_names()]
             li_el, c_el, ri_el = element.get_element_licri()
             for i1, i2 in enumerate(circuit_connection_ids):
@@ -104,7 +104,7 @@ class Circuit:
                     li[i2, j2] += li_el[i1, j1]
                     c[i2, j2] += c_el[i1, j1]
                     ri[i2, j2] += ri_el[i1, j1]
-        self.li, self.c, self.li, self.node_names = li, c, ri, node_names
+
         return li, c, ri, node_names
 
     def get_terminal_names(self):
@@ -115,11 +115,7 @@ class Circuit:
                 for terminal, node in self.terminal_nodes.items()}
 
     def compute_system_modes(self, num_modes=None):
-        """
-        Compute system modes in linear approximation
-        """
         li, c, ri, node_names = self.get_system_licri()
-        li = li
         zeros = np.zeros_like(li)
         identity = np.identity(li.shape[0])
 
@@ -127,10 +123,10 @@ class Circuit:
         max_li = np.max(np.abs(li))
         max_c = np.max(np.abs(c))
 
-        li_norm = li / max_li
-        c_norm = c / max_c
+        li_norm = li/max_li
+        c_norm = c/max_c
 
-        ri_norm = ri / np.sqrt(max_li * max_c)
+        ri_norm = ri/np.sqrt(max_li*max_c)
 
         b = np.hstack([
             np.vstack([zeros, identity]),
@@ -146,11 +142,11 @@ class Circuit:
         else:
             w, v = eigs(a, k=num_modes, M=b, which='SM')
 
-        self.w = w * np.sqrt(max_li / max_c)
+        self.w = w*np.sqrt(max_li/max_c)
         self.v = v
         self.solution_valid = True
 
-        return w * np.sqrt(max_li / max_c), v, node_names
+        return w*np.sqrt(max_li/max_c), v, node_names
 
     def system_modes_to_element_modes(self, system_modes, elements):
         node_names, circuit_connections = self.connections_circuit()
@@ -189,12 +185,12 @@ class Circuit:
             modes = self.v
 
         for mode_id in range(modes.shape[1]):
-            voltages = modes[modes.shape[0] // 2:, mode_id]
-            phases = modes[:modes.shape[0] // 2, mode_id]
-            element_energies.append(np.conj(phases).T @ li_el @ phases + np.conj(voltages).T @ c_el @ voltages)
-            total_energies.append(np.conj(phases).T @ li @ phases + np.conj(voltages).T @ c @ voltages)
+            voltages = modes[modes.shape[0]//2:, mode_id]
+            phases = modes[:modes.shape[0]//2, mode_id]
+            element_energies.append(np.conj(phases).T@li_el@phases + np.conj(voltages).T@c_el@voltages)
+            total_energies.append(np.conj(phases).T@li@phases + np.conj(voltages).T@c@voltages)
 
-        return np.asarray(element_energies) / np.asarray(total_energies)
+        return np.asarray(element_energies)/np.asarray(total_energies)
 
     def make_element(self, nodes: Mapping[Any, Any], cutoff_low: float = 1e3, cutoff_high: float = 1e11):
         from .subcircuit import Subcircuit
@@ -210,11 +206,111 @@ class Circuit:
 
         mode_mask = np.logical_and(np.imag(self.w) >= cutoff_low, np.imag(self.w) <= cutoff_high)
 
-        modes = self.v[:self.v.shape[0] // 2, :]
+        modes = self.v[:self.v.shape[0]//2, :]
         modes = modes[:, mode_mask]
         modes = {mode_id: modes[:, mode_id] for mode_id in range(modes.shape[1])}
 
         return Subcircuit(self, modes=modes, nodes=nodes)
+
+    def autosplit(self):
+        """
+        Create new circuit consisting of 'subcircuits', breaking apart according to coupling_hints of elements.
+        :return: Circuit consisting of Circuits with the same elements as the parent, except for the elements that
+        are split by according to coupling_hints.
+        """
+        connections_split = []
+
+        for element_name, element in self.elements.items():
+            connections = self.connections[element_name]
+            coupled_nodes = element.get_coupling_hints()
+
+            for terminal1, node1 in connections.items():
+                if node1 in self.shorted_nodes:
+                    continue
+                for terminal2, node2 in connections.items():
+                    if node2 in self.shorted_nodes:
+                        continue
+                    if node1 == node2:
+                        continue
+                    for subsystem in coupled_nodes:
+                        if terminal1 in subsystem and terminal2 in subsystem:
+                            connections_split.append({node1, node2})
+
+        # go bfs
+        subgraphs = []
+        disconnected_nodes = list(
+            set([v for n in self.connections.values() for v in n.values() if v not in self.shorted_nodes]))
+        while len(disconnected_nodes) > 0:
+            subgraph = set()
+            node_stack = [disconnected_nodes[0]]
+            while len(node_stack) > 0:
+                node = node_stack.pop()
+                if node in disconnected_nodes:
+                    disconnected_nodes.remove(node)
+                else:
+                    continue
+                for connection in connections_split:
+                    if node in connection:
+                        node_stack.extend(connection)
+                        subgraph = subgraph | connection
+            subgraphs.append(frozenset(subgraph))
+
+        # split subsystems
+        subsystems = {subgraph: Circuit(name=(self.name, subgraph)) for subgraph in subgraphs}
+        split_system = Circuit(name=(self.name, 'split'))
+
+        circuit_nodes, connections_circuit = self.connections_circuit()
+
+        for element_name, element in self.elements.items():
+            connections = self.connections[element_name]
+
+            splitting = {}
+            for subsystem in subgraphs:
+                part = subsystem & set(connections.values())
+                part_keys = [k for k, v in connections.items() if v in part]
+                if len(part_keys) > 0:
+                    splitting[(element_name, subsystem)] = part_keys
+            if len(splitting) < 2:
+                split_elements = {(k,): element for k in splitting.keys()}
+            else:
+                split_elements = element.split(splitting=splitting)
+            #         print(split_elements)
+
+            for k, splitted_element in split_elements.items():
+                connections_splitted_element = {k2: v for k2, v in connections_circuit[element_name].items()
+                                                if k2 in splitted_element.get_terminal_names()}
+                if len(k) == 1:
+                    #                 system = subsystems[frozenset(connections_splitted_element.values())]
+                    system = subsystems[k[0][1]]
+                else:
+                    system = split_system
+                system.add_element(splitted_element, connections_splitted_element)
+
+        split_system_nodes = split_system.connections_circuit()[0]
+        for subgraph, subsystem in subsystems.items():
+            for s in self.shorted_nodes:
+                if s in subsystem.connections_circuit()[0]:
+                    subsystem.short(s)
+            # need to find which nodes are outward-facing
+            connections = {n: n for n in subsystem.connections_circuit()[0] if n in split_system_nodes}
+            split_system.add_element(subsystem.make_element(connections), connections)
+
+        return split_system
+
+    def find_subsystem_name_by_element(self, element):
+        for name, subsystem_or_element in self.elements.items():
+            if hasattr(subsystem_or_element, 'circuit'):
+                if (element in subsystem_or_element.circuit.elements.values()
+                        or element in subsystem_or_element.circuit.elements.keys()):
+                    return name
+        return None
+
+    def rename_element(self, old_name, new_name):
+        self.connections[new_name] = self.connections[old_name]
+        self.elements[new_name] = self.elements[old_name]
+        self.elements[new_name].name = new_name
+        del self.connections[old_name]
+        del self.elements[old_name]
 
     def element_node_mapping(self, element):
         input_nodes, output_nodes = [], []
@@ -493,8 +589,4 @@ class Circuit:
         self.hamiltonian = LinearOperator((np.prod(self.grid_shape()), np.prod(self.grid_shape())),
                                           matvec=self.hamiltonian_phase_action)
         return self.charge_potential, self.phase_potential
-
-
-
-
 
