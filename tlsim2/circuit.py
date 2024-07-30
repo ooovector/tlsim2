@@ -2,7 +2,7 @@ import numpy as np
 from abc import abstractmethod
 from scipy.linalg import pinv, eig
 from scipy.sparse.linalg import eigs
-from typing import List, Mapping, Any
+from typing import List, Mapping, Any, Iterable
 from collections import OrderedDict
 
 from matplotlib import pyplot as plt
@@ -135,6 +135,93 @@ class Circuit:
         self.solution_valid = True
 
         return w*np.sqrt(max_li/max_c), v, node_names
+
+    def get_response(self, omega: Iterable[float], element_name_in: Any, element_names_out: Iterable[Any],
+                     terminals_in: Mapping[Any, float] = None,
+                     terminals_out: Iterable[Mapping[Any, float]] = None,
+                     z0_in: float=None, z0_out: Iterable[float]=None) -> np.ndarray:
+        """
+        Returns S-parameters when then excitation is applied to element_name_in and exits
+        through element_names_out.
+        :param omega: iterable of radial frequencies
+        :param element_name_in: name of the input element (port)
+        :param element_names_out: Iterable of names of the output elements (ports)
+        :param terminals_in: dict where the keys are terminal names of the input element and
+        the values are the weights with which they should be taken with. Defaults to
+        {'i': +1, 'o': -1}, which is what you would have for a LumpedTwoTerminal.
+        :param terminals_out: iterable of dicts where the keys are terminal names of
+        the input elements and the values are the weights with which they should be
+        taken with. Defaults to {'i': +1, 'o': -1} for each element_names_out
+        :param z0_in: Impedance of input port for excitation calculation (so that there is
+        no reflection, and also so the energy is normalized to unity). Defaults to element
+        resistance (self.elements[element_name_in].r)
+        :param z0_out: Impedances of the output ports for energy normalization (so
+        that for ports with different impedances the S_21 parameter is normalized to unity).
+        Defaults to element resistances (self.elements[element_name_out].r for element_name_out
+        in element_names_out)
+        :return: list of lists of complex s-parameters, for each output element, for each frequency.
+        """
+        if terminals_in is None:
+            terminals_in = {'i': +1, 'o': -1}
+
+        if terminals_out is None:
+            terminals_out = [{'i': +1, 'o': -1} for i in range(len(element_names_out))]
+
+        if z0_in is None:
+            z0_in = self.elements[element_name_in].r
+
+        if z0_out is None:
+            z0_out = [self.elements[element_name_out].r for element_name_out in element_names_out]
+
+        li, c, ri, node_names = self.get_system_licri()
+        zeros = np.zeros_like(li)
+        identity = np.identity(li.shape[0])
+
+        b = np.hstack([
+            np.vstack([zeros, identity]),
+            np.vstack([c, zeros])
+        ])
+        a = np.hstack([
+            np.vstack([-li, zeros]),
+            np.vstack([ri, identity])
+        ])
+
+        voltage = np.sqrt(z0_in)
+        current = -voltage / z0_in  # programming matched excitation
+
+        ext_i = np.zeros(len(node_names)*2, dtype=complex)
+        ext_v = np.zeros(len(node_names)*2, dtype=complex)
+
+        nodes = {self.connections[element_name_in][t]: w for t, w in terminals_in.items()
+                 if self.connections[element_name_in][t] not in self.shorted_nodes}
+
+        for node, weight in nodes.items():
+            ext_i[node_names.index(node)] = weight * current
+            ext_i[node_names.index(node) + len(node_names)] = weight * voltage
+            ext_v[node_names.index(node) + len(node_names)] = weight * voltage
+
+        m = b * 1j * np.reshape(omega, (-1, 1, 1)) + a
+        ext = ext_i.reshape((1, -1, 1)) + \
+              (b @ ext_v).reshape((1, -1, 1)) * 1j * np.reshape(omega, (-1, 1, 1))
+        response = np.linalg.solve(m, ext)
+        response = response.reshape(response.shape[:2])
+
+        if not hasattr(element_names_out, '__iter__'):
+            element_names_out = [element_names_out]
+
+        voltage_responses = np.zeros((len(omega), len(element_names_out)), dtype=complex)
+
+        for i, (element_terminals_out, element_name_out, element_z0_out) in enumerate(
+                zip(terminals_out, element_names_out, z0_out)):
+            nodes = {self.connections[element_name_out][t]: w for t, w in element_terminals_out.items()
+                     if self.connections[element_name_out][t] not in self.shorted_nodes}
+
+            voltage_responses[:, i] = (np.sum(
+                [response[:, node_names.index(node) + len(node_names)] for node, weight in nodes.items()],
+                axis=0)
+                                      / np.sqrt(element_z0_out))
+
+        return voltage_responses
 
     def system_modes_to_element_modes(self, system_modes, elements):
         node_names, circuit_connections = self.connections_circuit()
