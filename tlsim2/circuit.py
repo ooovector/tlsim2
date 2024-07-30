@@ -354,7 +354,11 @@ class Circuit:
             for k, splitted_element in split_elements.items():
                 connections_splitted_element = {k2: v for k2, v in connections_circuit[element_name].items()
                                                 if k2 in splitted_element.get_terminal_names()}
-                if len(k) == 1:
+                keep_top_level = (len(k) > 1)
+                if hasattr(splitted_element, 'keep_top_level'):
+                    if splitted_element.keep_top_level:
+                        keep_top_level = True
+                if not keep_top_level:
                     #                 system = subsystems[frozenset(connections_splitted_element.values())]
                     system = subsystems[k[0][1]]
                 else:
@@ -369,6 +373,10 @@ class Circuit:
             # need to find which nodes are outward-facing
             connections = {n: n for n in subsystem.connections_circuit()[0] if n in split_system_nodes}
             split_system.add_element(subsystem.make_element(connections), connections)
+
+        for s in self.shorted_nodes:
+            if s in split_system.connections_circuit()[0]:
+                split_system.short(s)
 
         return split_system
 

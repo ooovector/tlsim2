@@ -8,12 +8,15 @@ from collections import OrderedDict
 
 
 class Subcircuit:
-    def __init__(self, circuit: Circuit, nodes: Mapping[Any, Any], modes: Mapping[Any, Any]):
+    def __init__(self, circuit: Circuit, nodes: Mapping[Any, Any], modes: Mapping[Any, Any],
+                 keep_top_level=False):
         """
         Create a Subcircuit CircuitElement from a Circuit.
         :param circuit: Circuit from which the li, c, ri are taken from.
         :param nodes: Nodes that are retained as connectable in the CircuitElement
         :param modes: Internal modes that will be retained in the subcircuit
+        :param keep_top_level: Flag that will be acknowledged by autosplit, leaving
+        the element in the top-level system.
         """
         self.circuit = circuit
         self.nodes = nodes
