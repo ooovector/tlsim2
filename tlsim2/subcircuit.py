@@ -50,7 +50,7 @@ class Subcircuit:
                                          tol=residual_threshold)
 
             if rank > len(modes_with_nodes):
-                modes_with_nodes[mode_name] = mode_no_nodes
+                modes_with_nodes[('mode', mode_name)] = mode_no_nodes
 
         modes_with_nodes = OrderedDict(modes_with_nodes)
         # modes complete. This is now our transform
@@ -65,6 +65,11 @@ class Subcircuit:
         li_el = np.einsum('ij,jk,lk->il', np.conj(modes), li_sys, modes)
         c_el = np.einsum('ij,jk,lk->il', np.conj(modes), c_sys, modes)
         ri_el = np.einsum('ij,jk,lk->il', np.conj(modes), ri_sys, modes)
+
+        # symmetrize (remove rounding errors)
+        # self.li = (li_el + li_el.conj().T)/2
+        # self.c = (c_el + c_el.conj().T)/2
+        # self.ri = (ri_el + ri_el.conj().T)/2
 
         self.li = li_el
         self.c = c_el
