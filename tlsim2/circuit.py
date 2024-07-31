@@ -270,7 +270,7 @@ class Circuit:
             total_energies.append(np.conj(phases).T@li@phases + np.conj(voltages).T@c@voltages)
 
         epr = np.asarray(element_energies)/np.asarray(total_energies)
-        losses = np.asarray(element_losses)/np.asarray(total_energies)
+        losses = 2*np.asarray(element_losses)/np.asarray(total_energies)
 
         print(total_energies, element_energies, element_losses)
 
