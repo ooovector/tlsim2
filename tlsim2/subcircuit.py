@@ -21,23 +21,23 @@ class Subcircuit:
         """
         self.circuit = circuit
         self.nodes = nodes
-        if type(modes) is Mapping:
-            self.modes = modes
-            self.mode_eigenvals = mode_eigenvals
-            self.cutoff_low = None
-            self.cutoff_high = None
-        else:
-            self.cutoff_low, self.cutoff_high = modes
-            self.update_modes()
-
-        self.name = self.circuit.name
-        # self.cutoff_low = cutoff_low
-        # self.cutoff_high = cutoff_high
 
         self.li = np.zeros((0, 0))
         self.c = np.zeros((0, 0))
         self.ri = np.zeros((0, 0))
         self.node_names_el = None
+
+        if isinstance(modes, Mapping):
+            self.modes = modes
+            self.mode_eigenvals = mode_eigenvals
+            self.cutoff_low = None
+            self.cutoff_high = None
+            self.compute_element_licri()
+        else:
+            self.cutoff_low, self.cutoff_high = modes
+            self.update_modes()
+
+        self.name = self.circuit.name
 
     def update_modes(self, recalculate_circuit=True):
         if recalculate_circuit:
@@ -77,6 +77,7 @@ class Subcircuit:
                 modes_with_nodes[('mode', mode_name)] = mode_no_nodes
 
         modes_with_nodes = OrderedDict(modes_with_nodes)
+
         # modes complete. This is now our transform
 
         node_names_el = []
@@ -85,20 +86,18 @@ class Subcircuit:
         for node_id, node_name in enumerate(modes_with_nodes):
             node_names_el.append(node_name)
             modes.append(modes_with_nodes[node_name])
-
         li_el = np.einsum('ij,jk,lk->il', np.conj(modes), li_sys, modes)
         c_el = np.einsum('ij,jk,lk->il', np.conj(modes), c_sys, modes)
         ri_el = np.einsum('ij,jk,lk->il', np.conj(modes), ri_sys, modes)
-
         # symmetrize (remove rounding errors)
         # self.li = (li_el + li_el.conj().T)/2
         # self.c = (c_el + c_el.conj().T)/2
         # self.ri = (ri_el + ri_el.conj().T)/2
-
         self.li = li_el
         self.c = c_el
         self.ri = ri_el
         self.node_names_el = node_names_el
+        print(self.li, self.c, self.ri)
 
     def get_terminal_names(self):
         return self.node_names_el
