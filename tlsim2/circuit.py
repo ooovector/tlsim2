@@ -299,7 +299,7 @@ class Circuit:
 
         return Subcircuit(self, modes=modes, nodes=nodes)
 
-    def autosplit(self):
+    def autosplit(self, keep_nodes=list(), cutoff_low=1e3, cutoff_high=1e11):
         """
         Create new circuit consisting of 'subcircuits', breaking apart according to coupling_hints of elements.
         :return: Circuit consisting of Circuits with the same elements as the parent, except for the elements that
@@ -328,7 +328,7 @@ class Circuit:
         disconnected_nodes = list(
             set([v for n in self.connections.values() for v in n.values() if v not in self.shorted_nodes]))
         while len(disconnected_nodes) > 0:
-            subgraph = set()
+            subgraph = {disconnected_nodes[0]}
             node_stack = [disconnected_nodes[0]]
             while len(node_stack) > 0:
                 node = node_stack.pop()
@@ -340,7 +340,8 @@ class Circuit:
                     if node in connection:
                         node_stack.extend(connection)
                         subgraph = subgraph | connection
-            subgraphs.append(frozenset(subgraph))
+            if len(subgraph) > 0:
+                subgraphs.append(frozenset(subgraph))
 
         # split subsystems
         subsystems = {subgraph: Circuit(name=(self.name, subgraph)) for subgraph in subgraphs}
@@ -383,8 +384,9 @@ class Circuit:
                 if s in subsystem.connections_circuit()[0]:
                     subsystem.short(s)
             # need to find which nodes are outward-facing
-            connections = {n: n for n in subsystem.connections_circuit()[0] if n in split_system_nodes}
-            split_system.add_element(subsystem.make_element(connections), connections)
+            connections = {n: n for n in subsystem.connections_circuit()[0] if n in split_system_nodes or n in keep_nodes}
+            split_system.add_element(subsystem.make_element(connections, cutoff_low=cutoff_low,
+                                                            cutoff_high=cutoff_high), connections)
 
         for s in self.shorted_nodes:
             if s in split_system.connections_circuit()[0]:
