@@ -272,8 +272,6 @@ class Circuit:
         epr = np.asarray(element_energies)/np.asarray(total_energies)
         losses = 2*np.asarray(element_losses)/np.asarray(total_energies)
 
-        print(total_energies, element_energies, element_losses)
-
         if not return_losses:
             return epr
         else:
@@ -291,13 +289,7 @@ class Circuit:
         if self.w is None:
             self.compute_system_modes()
 
-        mode_mask = np.logical_and(np.imag(self.w) >= cutoff_low, np.imag(self.w) <= cutoff_high)
-
-        modes = self.v[:self.v.shape[0]//2, :]
-        modes = modes[:, mode_mask]
-        modes = {mode_id: modes[:, mode_id] for mode_id in range(modes.shape[1])}
-
-        return Subcircuit(self, modes=modes, nodes=nodes)
+        return Subcircuit(self, modes=(cutoff_low, cutoff_high), nodes=nodes)
 
     def autosplit(self, keep_nodes=list(), cutoff_low=1e3, cutoff_high=1e11):
         """
