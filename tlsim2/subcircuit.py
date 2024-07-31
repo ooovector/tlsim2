@@ -32,7 +32,7 @@ class Subcircuit:
 
         self.compute_element_licri()
 
-    def compute_element_licri(self, residual_threshold=1e-10):
+    def compute_element_licri(self, residual_threshold=1e-8):
         li_sys, c_sys, ri_sys, node_names_sys = self.circuit.get_system_licri()
 
         modes_with_nodes = {node_element: np.asarray([1 if node_id == node_names_sys.index(node_system) else 0 \
