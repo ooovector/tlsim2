@@ -130,6 +130,9 @@ class Circuit:
         else:
             w, v = eigs(a, k=num_modes, M=b, which='SM')
 
+        #rescaling modes
+        v[v.shape[0]//2:] = v[v.shape[0]//2:]*np.sqrt(max_li/max_c)
+
         self.w = w*np.sqrt(max_li/max_c)
         self.v = v
         self.solution_valid = True
@@ -218,8 +221,7 @@ class Circuit:
 
             voltage_responses[:, i] = (np.sum(
                 [response[:, node_names.index(node) + len(node_names)] for node, weight in nodes.items()],
-                axis=0)
-                                      / np.sqrt(element_z0_out))
+                axis=0) / np.sqrt(element_z0_out))
 
         return voltage_responses
 
@@ -245,13 +247,14 @@ class Circuit:
 
         return element_modes
 
-    def element_epr(self, elements, modes=None):
+    def element_epr(self, elements, modes=None, return_losses=False):
         """
         Return mode ids in order of participation of elements
         :param elements: elements to search for modes
         :return:
         """
         element_energies = []
+        element_losses = []
         total_energies = []
         li_el, c_el, ri_el, node_names = self.get_system_licri(elements)
         li, c, ri, node_names = self.get_system_licri()
@@ -263,9 +266,18 @@ class Circuit:
             voltages = modes[modes.shape[0]//2:, mode_id]
             phases = modes[:modes.shape[0]//2, mode_id]
             element_energies.append(np.conj(phases).T@li_el@phases + np.conj(voltages).T@c_el@voltages)
+            element_losses.append(np.conj(voltages).T@ri_el@voltages)
             total_energies.append(np.conj(phases).T@li@phases + np.conj(voltages).T@c@voltages)
 
-        return np.asarray(element_energies)/np.asarray(total_energies)
+        epr = np.asarray(element_energies)/np.asarray(total_energies)
+        losses = np.asarray(element_losses)/np.asarray(total_energies)
+
+        print(total_energies, element_energies, element_losses)
+
+        if not return_losses:
+            return epr
+        else:
+            return epr, losses
 
     def make_element(self, nodes: Mapping[Any, Any], cutoff_low: float = 1e3, cutoff_high: float = 1e11):
         from .subcircuit import Subcircuit
