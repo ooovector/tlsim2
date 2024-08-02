@@ -147,7 +147,8 @@ class TLFieldDistribution(FieldDistribution):
 
 
 class MultiTransmissionLine(LinearElement):
-    def __init__(self, name, n, l, ll, cl, rl=None, gl=None, basis=None, coupler_hint=False):
+    def __init__(self, name, n, l, ll, cl, rl=None, gl=None, basis=None,
+                 coupler_hint=False, keep_top_level=False):
         self.ll = ll
         self.cl = cl
         self.rl = rl
@@ -163,6 +164,7 @@ class MultiTransmissionLine(LinearElement):
         self.lumped = False
         self.type_ = 'TL'
         self.coupler_hint = coupler_hint
+        self.keep_top_level = keep_top_level
 
     def set_basis(self, basis):
         self.basis = basis

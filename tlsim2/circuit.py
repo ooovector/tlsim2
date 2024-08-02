@@ -2,7 +2,7 @@ import numpy as np
 from abc import abstractmethod
 from scipy.linalg import pinv, eig
 from scipy.sparse.linalg import eigs
-from typing import List, Mapping, Any
+from typing import List, Mapping, Any, Iterable
 from collections import OrderedDict
 from scipy.constants import h, hbar, e
 from matplotlib import pyplot as plt
@@ -142,11 +142,100 @@ class Circuit:
         else:
             w, v = eigs(a, k=num_modes, M=b, which='SM')
 
+        #rescaling modes
+        v[v.shape[0]//2:] = v[v.shape[0]//2:]*np.sqrt(max_li/max_c)
+
         self.w = w*np.sqrt(max_li/max_c)
         self.v = v
         self.solution_valid = True
 
         return w*np.sqrt(max_li/max_c), v, node_names
+
+    def get_response(self, omega: Iterable[float], element_name_in: Any, element_names_out: Iterable[Any],
+                     terminals_in: Mapping[Any, float] = None,
+                     terminals_out: Iterable[Mapping[Any, float]] = None,
+                     z0_in: float=None, z0_out: Iterable[float]=None) -> np.ndarray:
+        """
+        Returns S-parameters when then excitation is applied to element_name_in and exits
+        through element_names_out.
+        :param omega: iterable of radial frequencies
+        :param element_name_in: name of the input element (port)
+        :param element_names_out: Iterable of names of the output elements (ports)
+        :param terminals_in: dict where the keys are terminal names of the input element and
+        the values are the weights with which they should be taken with. Defaults to
+        {'i': +1, 'o': -1}, which is what you would have for a LumpedTwoTerminal.
+        :param terminals_out: iterable of dicts where the keys are terminal names of
+        the input elements and the values are the weights with which they should be
+        taken with. Defaults to {'i': +1, 'o': -1} for each element_names_out
+        :param z0_in: Impedance of input port for excitation calculation (so that there is
+        no reflection, and also so the energy is normalized to unity). Defaults to element
+        resistance (self.elements[element_name_in].r)
+        :param z0_out: Impedances of the output ports for energy normalization (so
+        that for ports with different impedances the S_21 parameter is normalized to unity).
+        Defaults to element resistances (self.elements[element_name_out].r for element_name_out
+        in element_names_out)
+        :return: list of lists of complex s-parameters, for each output element, for each frequency.
+        """
+        if terminals_in is None:
+            terminals_in = {'i': +1, 'o': -1}
+
+        if terminals_out is None:
+            terminals_out = [{'i': +1, 'o': -1} for i in range(len(element_names_out))]
+
+        if z0_in is None:
+            z0_in = self.elements[element_name_in].r
+
+        if z0_out is None:
+            z0_out = [self.elements[element_name_out].r for element_name_out in element_names_out]
+
+        li, c, ri, node_names = self.get_system_licri()
+        zeros = np.zeros_like(li)
+        identity = np.identity(li.shape[0])
+
+        b = np.hstack([
+            np.vstack([zeros, identity]),
+            np.vstack([c, zeros])
+        ])
+        a = np.hstack([
+            np.vstack([-li, zeros]),
+            np.vstack([ri, identity])
+        ])
+
+        voltage = np.sqrt(z0_in)
+        current = -voltage / z0_in  # programming matched excitation
+
+        ext_i = np.zeros(len(node_names)*2, dtype=complex)
+        ext_v = np.zeros(len(node_names)*2, dtype=complex)
+
+        nodes = {self.connections[element_name_in][t]: w for t, w in terminals_in.items()
+                 if self.connections[element_name_in][t] not in self.shorted_nodes}
+
+        for node, weight in nodes.items():
+            ext_i[node_names.index(node)] = weight * current
+            ext_i[node_names.index(node) + len(node_names)] = weight * voltage
+            ext_v[node_names.index(node) + len(node_names)] = weight * voltage
+
+        m = b * 1j * np.reshape(omega, (-1, 1, 1)) + a
+        ext = ext_i.reshape((1, -1, 1)) + \
+              (b @ ext_v).reshape((1, -1, 1)) * 1j * np.reshape(omega, (-1, 1, 1))
+        response = np.linalg.solve(m, ext)
+        response = response.reshape(response.shape[:2])
+
+        if not hasattr(element_names_out, '__iter__'):
+            element_names_out = [element_names_out]
+
+        voltage_responses = np.zeros((len(omega), len(element_names_out)), dtype=complex)
+
+        for i, (element_terminals_out, element_name_out, element_z0_out) in enumerate(
+                zip(terminals_out, element_names_out, z0_out)):
+            nodes = {self.connections[element_name_out][t]: w for t, w in element_terminals_out.items()
+                     if self.connections[element_name_out][t] not in self.shorted_nodes}
+
+            voltage_responses[:, i] = (np.sum(
+                [response[:, node_names.index(node) + len(node_names)] for node, weight in nodes.items()],
+                axis=0) / np.sqrt(element_z0_out))
+
+        return voltage_responses
 
     def system_modes_to_element_modes(self, system_modes, elements):
         node_names, circuit_connections = self.connections_circuit()
@@ -170,13 +259,14 @@ class Circuit:
 
         return element_modes
 
-    def element_epr(self, elements, modes=None):
+    def element_epr(self, elements, modes=None, return_losses=False):
         """
         Return mode ids in order of participation of elements
         :param elements: elements to search for modes
         :return:
         """
         element_energies = []
+        element_losses = []
         total_energies = []
         li_el, c_el, ri_el, node_names = self.get_system_licri(elements)
         li, c, ri, node_names = self.get_system_licri()
@@ -188,9 +278,16 @@ class Circuit:
             voltages = modes[modes.shape[0]//2:, mode_id]
             phases = modes[:modes.shape[0]//2, mode_id]
             element_energies.append(np.conj(phases).T@li_el@phases + np.conj(voltages).T@c_el@voltages)
+            element_losses.append(np.conj(voltages).T@ri_el@voltages)
             total_energies.append(np.conj(phases).T@li@phases + np.conj(voltages).T@c@voltages)
 
-        return np.asarray(element_energies)/np.asarray(total_energies)
+        epr = np.asarray(element_energies)/np.asarray(total_energies)
+        losses = 2*np.asarray(element_losses)/np.asarray(total_energies)
+
+        if not return_losses:
+            return epr
+        else:
+            return epr, losses
 
     def make_element(self, nodes: Mapping[Any, Any], cutoff_low: float = 1e3, cutoff_high: float = 1e11):
         from .subcircuit import Subcircuit
@@ -204,15 +301,9 @@ class Circuit:
         if self.w is None:
             self.compute_system_modes()
 
-        mode_mask = np.logical_and(np.imag(self.w) >= cutoff_low, np.imag(self.w) <= cutoff_high)
+        return Subcircuit(self, modes=(cutoff_low, cutoff_high), nodes=nodes)
 
-        modes = self.v[:self.v.shape[0]//2, :]
-        modes = modes[:, mode_mask]
-        modes = {mode_id: modes[:, mode_id] for mode_id in range(modes.shape[1])}
-
-        return Subcircuit(self, modes=modes, nodes=nodes)
-
-    def autosplit(self):
+    def autosplit(self, keep_nodes=list(), cutoff_low=1e3, cutoff_high=1e11):
         """
         Create new circuit consisting of 'subcircuits', breaking apart according to coupling_hints of elements.
         :return: Circuit consisting of Circuits with the same elements as the parent, except for the elements that
@@ -241,7 +332,7 @@ class Circuit:
         disconnected_nodes = list(
             set([v for n in self.connections.values() for v in n.values() if v not in self.shorted_nodes]))
         while len(disconnected_nodes) > 0:
-            subgraph = set()
+            subgraph = {disconnected_nodes[0]}
             node_stack = [disconnected_nodes[0]]
             while len(node_stack) > 0:
                 node = node_stack.pop()
@@ -253,7 +344,8 @@ class Circuit:
                     if node in connection:
                         node_stack.extend(connection)
                         subgraph = subgraph | connection
-            subgraphs.append(frozenset(subgraph))
+            if len(subgraph) > 0:
+                subgraphs.append(frozenset(subgraph))
 
         # split subsystems
         subsystems = {subgraph: Circuit(name=(self.name, subgraph)) for subgraph in subgraphs}
@@ -279,7 +371,11 @@ class Circuit:
             for k, splitted_element in split_elements.items():
                 connections_splitted_element = {k2: v for k2, v in connections_circuit[element_name].items()
                                                 if k2 in splitted_element.get_terminal_names()}
-                if len(k) == 1:
+                keep_top_level = (len(k) > 1)
+                if hasattr(splitted_element, 'keep_top_level'):
+                    if splitted_element.keep_top_level:
+                        keep_top_level = True
+                if not keep_top_level:
                     #                 system = subsystems[frozenset(connections_splitted_element.values())]
                     system = subsystems[k[0][1]]
                 else:
@@ -292,8 +388,13 @@ class Circuit:
                 if s in subsystem.connections_circuit()[0]:
                     subsystem.short(s)
             # need to find which nodes are outward-facing
-            connections = {n: n for n in subsystem.connections_circuit()[0] if n in split_system_nodes}
-            split_system.add_element(subsystem.make_element(connections), connections)
+            connections = {n: n for n in subsystem.connections_circuit()[0] if n in split_system_nodes or n in keep_nodes}
+            split_system.add_element(subsystem.make_element(connections, cutoff_low=cutoff_low,
+                                                            cutoff_high=cutoff_high), connections)
+
+        for s in self.shorted_nodes:
+            if s in split_system.connections_circuit()[0]:
+                split_system.short(s)
 
         return split_system
 
