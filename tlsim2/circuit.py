@@ -111,6 +111,12 @@ class Circuit:
         max_li = np.max(np.abs(li))
         max_c = np.max(np.abs(c))
 
+        # avoid NaNs
+        if not max_li > 0:
+            max_li = 1
+        if not max_c > 0:
+            max_c = 1
+
         li_norm = li/max_li
         c_norm = c/max_c
 
