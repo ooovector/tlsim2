@@ -6,6 +6,7 @@ from typing import List, Mapping, Any, Iterable
 from collections import OrderedDict
 from scipy.constants import h, hbar, e
 from matplotlib import pyplot as plt
+from .linear import NonlinearElement
 
 
 class Circuit:
@@ -26,6 +27,9 @@ class Circuit:
         self.c = None
         self.ri = None
         self.ci = None
+
+        self.nonlinear_elements = OrderedDict()
+
         self.node_names = []
         self.linear_coordinate_transform = np.asarray(0)
         self.variables_types = []
@@ -41,6 +45,9 @@ class Circuit:
         if element.name in self.elements:
             raise ValueError(f'Element with name {element.name} already in Circuit')
         self.elements[element.name] = element
+
+        if hasattr(element, 'get_lagrangian_series'):
+            self.nonlinear_elements[element.name] = element
         self.connections[element.name] = connection
 
         for k, v in connection.items():
@@ -272,7 +279,10 @@ class Circuit:
         li, c, ri, node_names = self.get_system_licri()
 
         if modes is None:
+            # remove redundancy in modes
+            w = np.imag(self.w)
             modes = self.v
+            modes = modes[:, w > 0]
 
         for mode_id in range(modes.shape[1]):
             voltages = modes[modes.shape[0]//2:, mode_id]

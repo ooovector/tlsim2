@@ -108,7 +108,7 @@ class NonlinearElement(CircuitElement):
         """
         Get the coefficients for the series expansion of the current element's phase functions
         :param order:
-        :return:
+        :return: array
         """
         pass
 
@@ -118,6 +118,10 @@ class NonlinearElement(CircuitElement):
 
     @abstractmethod
     def get_terminal_names(self):
+        pass
+
+    @abstractmethod
+    def get_potential_energy(self, phases):
         pass
 
 
