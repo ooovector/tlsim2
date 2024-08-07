@@ -59,7 +59,6 @@ class LinearHull:
 
     def orthogonalize(self, epsilon=1e-11):
         eigenvalues, eigenvectors = np.linalg.eigh(self.basis_products.sum(axis=(1, 3)))
-        print('printing ev, ev: ', eigenvalues, eigenvectors)
         # eigenvectors = eigenvectors.T
         new_basis = []
 

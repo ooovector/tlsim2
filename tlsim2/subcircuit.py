@@ -86,6 +86,8 @@ class Subcircuit:
         for node_id, node_name in enumerate(modes_with_nodes):
             node_names_el.append(node_name)
             modes.append(modes_with_nodes[node_name])
+
+        modes = np.reshape(modes, (len(modes), li_sys.shape[0]))
         li_el = np.einsum('ij,jk,lk->il', np.conj(modes), li_sys, modes)
         c_el = np.einsum('ij,jk,lk->il', np.conj(modes), c_sys, modes)
         ri_el = np.einsum('ij,jk,lk->il', np.conj(modes), ri_sys, modes)
@@ -97,7 +99,6 @@ class Subcircuit:
         self.c = c_el
         self.ri = ri_el
         self.node_names_el = node_names_el
-        print(self.li, self.c, self.ri)
 
     def get_terminal_names(self):
         return self.node_names_el
