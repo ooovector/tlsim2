@@ -2,6 +2,7 @@ import numpy as np
 from abc import abstractmethod
 from scipy.linalg import pinv, eig
 from scipy.sparse.linalg import eigs
+from scipy.optimize import fsolve
 from typing import List, Mapping, Any, Iterable
 from collections import OrderedDict
 
@@ -407,3 +408,71 @@ class Circuit:
         del self.connections[old_name]
         del self.elements[old_name]
 
+    def optimize_nodes(self, w_ideal, decay_ideal, param_dict, mode_elements):
+        """
+        Optimizes eigenfrequencies and decay constants to the values given
+        in w_ideal and decay_ideal by changing parameters specified in
+        param_dict.
+        The modes which eigenfrequencies and decay constants are optimized
+        are determined by having the highest energy dissipation ratio at the
+        elements given in mode_elements.
+        :param w_ideal: optimized eigenfrequencies in GHz
+        :param decay_ideal: optimized decay constants in GHz
+        :param param_dict param_dict: dictionary of parameters which are
+        changed to achieve ideal eigenmodes
+        :param mode_elements: list of elements from the circuits which
+        are used to identify the correct modes
+        :return: returns the optimization result (frequencies and decay
+        constants of last step of optimization)
+        """
+        def cost_fct(values, elem_dict, w_ideal, decay_ideal, mode_elements):
+            for (elem, par), new_value in zip(elem_dict.items(), values):
+                new_value = 1e-6 if new_value <= 0 else new_value
+                if par == 'c':
+                    new_value = new_value / 1e15
+
+                setattr(self.elements[elem], par, new_value)
+            w_rpf, v_rpf, node_names_rpf = self.compute_system_modes()
+            frequencies = np.imag(w_rpf / (2 * np.pi)) / 1e9
+            decays = np.real(w_rpf / 1e9) * 2
+            cost = []
+
+            indices = self.find_mode_of_elements(
+                mode_elements, n=len(w_ideal))
+
+            for i, j in enumerate(indices):
+                cost.append(frequencies[j] - w_ideal[i])
+                cost.append(decays[j] - decay_ideal[i])
+            return cost
+
+        x0 = []
+        for elem, par in param_dict.items():
+            if par == 'c':
+                x0.append(getattr(self.elements[elem], par) * 1e15)
+            else:
+                x0.append(getattr(self.elements[elem], par))
+
+        return fsolve(cost_fct, x0, args=(param_dict, w_ideal, decay_ideal,
+                                          mode_elements), )
+
+    def find_mode_of_elements(self, elements, only_positives=True, n=2,):
+        """
+        Returns the mode indices of the n lowest modes which have the maximum
+        energy participation ration at the elements.
+        :param elements: list of elements which energy participation ration
+        is calculated
+        :param only_positives: if True, only the positive frequencies are
+        considered
+        :param n: number of returned mode indices
+        :return: list of mode indices
+        """
+        modes = np.abs(self.element_epr(elements)) > 0.5
+        freqs = np.imag(self.w)
+        if only_positives:
+            positive_frequencies_mask = freqs > 0
+        else:
+            positive_frequencies_mask = np.ones_like(modes, dtype=bool)
+        mask = np.logical_and(modes, positive_frequencies_mask)
+        freqs[np.logical_not(mask)] = np.inf
+        relevant_modes = np.argsort(freqs)[:n]
+        return relevant_modes
