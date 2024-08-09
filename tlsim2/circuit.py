@@ -286,10 +286,7 @@ class Circuit:
         li, c, ri, node_names = self.get_system_licri()
 
         if modes is None:
-            # remove redundancy in modes
-            w = np.imag(self.w)
             modes = self.v
-            modes = modes[:, w > 0]
 
         for mode_id in range(modes.shape[1]):
             voltages = modes[modes.shape[0]//2:, mode_id]

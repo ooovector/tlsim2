@@ -69,6 +69,14 @@ class SplitTest(unittest.TestCase):
         sys_rpf.short(0)
 
         w_rpf, v_rpf, node_names_rpf = sys_rpf.compute_system_modes()
+        resonator_modes_mask = np.real(sys_rpf.element_epr([ro, rs])) > 0.5
+        pf_modes_mask = np.real(sys_rpf.element_epr([ps, pm, po])) > 0.5
+        positive_frequency_mask = np.imag(w_rpf) > 0
+
+        res_mode_id = np.argmin(np.imag(w_rpf[np.logical_and(resonator_modes_mask, positive_frequency_mask)]))
+        pf_mode_id = np.argmin(np.imag(w_rpf[np.logical_and(pf_modes_mask, positive_frequency_mask)]))
+        wr_rpf = w_rpf[np.logical_and(resonator_modes_mask, positive_frequency_mask)][res_mode_id]
+        wp_rpf = w_rpf[np.logical_and(pf_modes_mask, positive_frequency_mask)][pf_mode_id]
 
         frequencies_rpf = np.imag(w_rpf / (2 * np.pi)) / 1e9
         decays_rpf = np.real(w_rpf / 1e9) * 2
@@ -90,11 +98,15 @@ class SplitTest(unittest.TestCase):
         pf_modes_mask = np.real(split_system.element_epr([split_system.elements['Purcell-filter']])) > 0.5
         positive_frequency_mask = np.imag(w_split) > 0
         # take lowest frequency of these modes
-        wr_split = np.min(w_split[np.logical_and(resonator_modes_mask, positive_frequency_mask)])
-        wp_split = np.min(w_split[np.logical_and(pf_modes_mask, positive_frequency_mask)])
+        res_mode_id = np.argmin(np.imag(w_split[np.logical_and(resonator_modes_mask, positive_frequency_mask)]))
+        pf_mode_id = np.argmin(np.imag(w_split[np.logical_and(pf_modes_mask, positive_frequency_mask)]))
+        wr_split = w_split[np.logical_and(resonator_modes_mask, positive_frequency_mask)][res_mode_id]
+        wp_split = w_split[np.logical_and(pf_modes_mask, positive_frequency_mask)][pf_mode_id]
 
-        assert np.any(np.abs(w_rpf - wr_split) < 1e6) # 1e-7 precision
-        assert np.any(np.abs(w_rpf - wp_split) < 1e6) # 1e-7 precision
+        print (wp_rpf, wp_split)
+        print (wr_rpf, wr_split)
+        assert np.any(np.abs(wr_rpf - wr_split) < 1e6) # 1e-7 precision
+        assert np.any(np.abs(wp_rpf - wp_split) < 1e6) # 1e-7 precision
 
 
 if __name__ == '__main__':
