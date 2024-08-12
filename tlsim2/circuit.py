@@ -762,7 +762,8 @@ class Circuit:
         return fsolve(cost_fct, x0, args=(param_dict, w_ideal, decay_ideal,
                                           mode_elements), )
 
-    def find_mode_of_elements(self, elements, only_positives=True, n=2,):
+    def find_mode_of_elements(self, elements, only_positives=True, n=2,
+                              threshold=0.5):
         """
         Returns the mode indices of the n lowest modes which have the maximum
         energy participation ration at the elements.
@@ -773,7 +774,7 @@ class Circuit:
         :param n: number of returned mode indices
         :return: list of mode indices
         """
-        modes = np.abs(self.element_epr(elements)) > 0.5
+        modes = np.abs(self.element_epr(elements)) > threshold
         freqs = np.imag(self.w)
         if only_positives:
             positive_frequencies_mask = freqs > 0
