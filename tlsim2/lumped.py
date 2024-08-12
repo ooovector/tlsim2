@@ -59,7 +59,8 @@ class JosephsonJunction(NonlinearElement):
             if i % 2 != 0:
                 l = np.inf
             else:
-                l = self.phi0 ** 2 / self.ej * factorial(i) / i
+                l = (- 1) ** (i // 2 + 1) * self.phi0 ** i * factorial(i) / i / self.ej
+
             li[..., i - 2] = np.asarray([[1 / l, - 1 / l],
                                          [-1 / l, 1 / l]])
         return li, c, ri

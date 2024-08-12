@@ -122,7 +122,12 @@ class Circuit:
         return {terminal: np.asarray([1 if node == current_node else 0 for current_node in self.node_names]) \
                 for terminal, node in self.terminal_nodes.items()}
 
-    def compute_system_modes(self, num_modes=None):
+    def compute_system_modes(self, num_modes=None, only_positive=False):
+        """
+        Compute system modes using eigen solver method
+        :param num_modes:
+        :param only_positive: if True, when modes only with positive imaginary part is considered
+        """
         li, c, ri, node_names = self.get_system_licri()
         zeros = np.zeros_like(li)
         identity = np.identity(li.shape[0])
@@ -158,6 +163,11 @@ class Circuit:
 
         #rescaling modes
         v[v.shape[0]//2:] = v[v.shape[0]//2:]*np.sqrt(max_li/max_c)
+
+        if only_positive:
+            frequencies = np.imag(w)
+            w = w[frequencies > 0]
+            v = v[:, frequencies > 0]
 
         self.w = w*np.sqrt(max_li/max_c)
         self.v = v
@@ -286,10 +296,7 @@ class Circuit:
         li, c, ri, node_names = self.get_system_licri()
 
         if modes is None:
-            # remove redundancy in modes
-            w = np.imag(self.w)
             modes = self.v
-            modes = modes[:, w > 0]
 
         for mode_id in range(modes.shape[1]):
             voltages = modes[modes.shape[0]//2:, mode_id]
