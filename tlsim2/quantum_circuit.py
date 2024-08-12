@@ -37,9 +37,14 @@ class QuantumCircuit:
         Return matrix of EPR coefficients with shape MxJ, where M is number of modes in the system and J is a number
         of nonlinear elements
         """
+        # remove redundancy in modes
+        w = np.imag(self.circuit.w)
+        modes = self.circuit.v
+        modes = modes[:, w > 0]
+
         epr_mat = np.empty((self.num_modes, self.num_nonlinear_elements))
         for j, nonlinear_element in enumerate(self.circuit.nonlinear_elements.values()):
-            element_epr = self.circuit.element_epr([nonlinear_element])
+            element_epr = self.circuit.element_epr([nonlinear_element], modes=modes)
             epr_mat[:, j] = np.real(element_epr) * 2
         return epr_mat
 
