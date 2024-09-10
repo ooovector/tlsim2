@@ -7,10 +7,25 @@ from typing import List, Mapping, Any, Iterable
 from collections import OrderedDict
 from scipy.constants import h, hbar, e
 from matplotlib import pyplot as plt
-from .linear import NonlinearElement
+from .linear import LinearElement
 
 
 class Circuit:
+    """
+    Class for a linear circuit
+
+    Attributes:
+        name (str): name of a circuit instance
+        node_names (List): list of nodes in the circuit including shorted nodes
+        elements (OrderedDict): ordered dictionary of elements presented in the circuit
+        connections (dict): dictionary of connections  [element name, connection]
+        shorted_nodes (list): list of shorted nodes in the circuit,
+                              these nodes are not considered as generalized coordinates
+        terminal_nodes (dict):
+        solution_valid (bool):
+
+        nonlinear_elements (OrderedDict): ordered dictionary of nonlinear elements in a circuit
+    """
     def __init__(self, name=None):
         self.name = name
         self.node_names = []
@@ -27,7 +42,6 @@ class Circuit:
         self.li = None
         self.c = None
         self.ri = None
-        self.ci = None
 
         self.nonlinear_elements = OrderedDict()
 
@@ -79,11 +93,12 @@ class Circuit:
                     node_names.append(new_node_name)
         return node_names, connections
 
-    def get_system_licri(self, element_mask: List = None):
+    def get_system_licri(self, element_mask: List = None, linear: bool = False):
         """
         Returns inverse inductance (li), capacitance (c) and resistance matrices (r) of system, including only
         contributions by circuit elements in element_mask (all elements, if element_mask is None)
         :param element_mask:
+        :param linear: if True, when add only linear elements to system li, c, ri matrices
         :return:
         """
         node_names, connections = self.connections_circuit()
@@ -96,8 +111,9 @@ class Circuit:
             element_mask = [element for element in self.elements.values()]
 
         for element in self.elements.values():
+            if linear and not isinstance(element, LinearElement):
+                continue
             connection = connections[element.name]
-
             if element not in element_mask:
                 continue
             circuit_connection_ids = [node_names.index(connection[t]) if connection[t] in node_names else None\
@@ -436,15 +452,6 @@ class Circuit:
         self.elements[new_name].name = new_name
         del self.connections[old_name]
         del self.elements[old_name]
-
-    def element_node_mapping(self, element):
-        input_nodes, output_nodes = [], []
-        for terminal in self.connections[element.name]:
-            if terminal[0] == 'i':
-                input_nodes.append(self.connections[element.name][terminal])
-            else:
-                output_nodes.append(self.connections[element.name][terminal])
-        return input_nodes, output_nodes
 
     def optimize_nodes(self, w_ideal, decay_ideal, param_dict, mode_elements):
         """

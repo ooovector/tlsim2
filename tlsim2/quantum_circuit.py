@@ -55,7 +55,7 @@ class QuantumCircuit:
         w_mat = np.diag(w)
         ej_mat_inv = np.diag([1 / element.ej for element in self.circuit.nonlinear_elements.values()])
         phi_mj_2 = hbar / 2 * w_mat @ epr_mat @ ej_mat_inv
-        return np.sqrt(phi_mj_2)
+        return np.sqrt(np.abs(phi_mj_2))
 
     def get_kerr_matrix(self):
         epr_mat = self.get_epr_coefficients()
@@ -137,8 +137,8 @@ class QuantumCircuit:
 
         # add ground state
         undressed_states.append(tuple([0] * num_modes))
-        dressed_state_ids, dressed_state_participation_ratios = self.find_dressed_state_id(states, num_levels,
-                                                                                           undressed_states)
+        dressed_state_ids, dressed_state_participation_ratios, states_ = self.find_dressed_state_id(states, num_levels,
+                                                                                                    undressed_states)
 
         dressed_state_ids = np.asarray(dressed_state_ids).ravel()
         dressed_state_participation_ratios = np.asarray(dressed_state_participation_ratios).ravel()
@@ -146,8 +146,8 @@ class QuantumCircuit:
         if not all(dressed_state_participation_ratios > threshold):
             raise ValueError("Non-dispersive states were found in the list of dressed states")
 
-        ground_state = states[:, dressed_state_ids[-1]].ravel()
-        single_double_photon_states = states[:, dressed_state_ids[:-1]]
+        ground_state = states_[:, -1]
+        single_double_photon_states = states_[:, :-1]
 
         ground = ground_state.T.conj() @ ham @ ground_state
         kerr = np.diag(single_double_photon_states.T.conj() @ ham @ single_double_photon_states)
@@ -224,4 +224,4 @@ class QuantumCircuit:
         dressed_state_ids = [list(sorting[:, state_id]) for state_id in range(len(basis_states))]
         dressed_state_participation_ratios = [list(participation_ratios[closest_state_ids, state_id]) for
                                               state_id, closest_state_ids in enumerate(dressed_state_ids)]
-        return dressed_state_ids, dressed_state_participation_ratios
+        return dressed_state_ids, dressed_state_participation_ratios, undressed_states
