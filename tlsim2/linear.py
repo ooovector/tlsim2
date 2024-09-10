@@ -1,9 +1,11 @@
 from abc import abstractmethod, ABC
-from typing import Iterable, Mapping, Any
+from typing import Iterable, Mapping, Any, Tuple
 import numpy as np
 
 
 class CircuitElement:
+    name: str
+
     @abstractmethod
     def get_element_licri(self):
         pass
@@ -121,7 +123,7 @@ class NonlinearElement(CircuitElement):
         pass
 
     @abstractmethod
-    def get_potential_energy(self, phases):
+    def get_nonlinear_potential_energy(self, phases):
         pass
 
 

@@ -49,6 +49,7 @@ class JosephsonJunction(NonlinearElement):
         self.terminal_names = ['i', 'o']
 
         self.phi0 = hbar / (2 * e)
+        self.stationary_phase = 0.
 
     def get_lagrangian_series(self, order: int = 2):
         if order < 2:
@@ -59,15 +60,15 @@ class JosephsonJunction(NonlinearElement):
             if i % 2 != 0:
                 l = np.inf
             else:
-                l = (- 1) ** (i // 2 + 1) * self.phi0 ** i * factorial(i) / i / self.ej
+                l = (- 1) ** (i // 2 + 1) * self.phi0 ** i * factorial(i) / i / self.ej / np.cos(self.stationary_phase)
 
             li[..., i - 2] = np.asarray([[1 / l, - 1 / l],
                                          [-1 / l, 1 / l]])
         return li, c, ri
 
-    def get_potential_energy(self, phases):
-        """For Josephson Junction element potential energy is U(Phi) = EJ (1 - cos(Phi / phi0))"""
-        return self.ej * (1 - np.cos((phases[0] - phases[1]) / self.phi0))
+    def get_nonlinear_potential_energy(self, phases):
+        """For Josephson Junction element potential energy is U(Phi) = - EJ cos(Phi / phi0)"""
+        return - self.ej * np.cos((phases[0] - phases[1]) / self.phi0)
 
     def get_terminal_names(self):
         return self.terminal_names
