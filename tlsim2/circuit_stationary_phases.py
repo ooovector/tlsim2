@@ -3,7 +3,6 @@ from scipy.constants import h, hbar, e
 from .circuit import Circuit
 from .linear import CircuitElement, LinearElement
 from typing import List
-from attributedict.collections import AttributeDict
 
 
 class _CircuitLoop:
@@ -19,7 +18,7 @@ class _CircuitLoop:
 class CircuitStationaryPhases:
     def __init__(self, circuit: Circuit):
         self.circuit = circuit
-        self.circuit_loops = AttributeDict({})
+        self.circuit_loops = dict()
 
         self.__node_names_stationary = []
         self.__connections_stationary = {}

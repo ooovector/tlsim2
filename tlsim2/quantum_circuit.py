@@ -64,7 +64,7 @@ class QuantumCircuit:
         w_mat = np.diag(w)
         ej_mat_inv = np.diag([1 / element.ej for element in self.circuit.nonlinear_elements.values()])
         temp = w_mat @ epr_mat
-        kerr_matrix = hbar / 4 * temp @ ej_mat_inv @ temp.T
+        kerr_matrix = -hbar / 4 * temp @ ej_mat_inv @ temp.T
         anharmonicities = np.diag(kerr_matrix) / 2
         return kerr_matrix, anharmonicities
 
@@ -112,7 +112,7 @@ class QuantumCircuit:
         return ham
 
     def get_kerr_matrix_hamiltonian(self, modes: List[int], num_levels: List[int], order: int = 4,
-                                    threshold: float = 0.8):
+                                    threshold: float = 0.5):
         """
         Returns Kerr matrix from Hamiltonian up to defined order of non-linearity.
         The Kerr matrix is calculated using single photon and double photon excitation states in the dispersive limit.

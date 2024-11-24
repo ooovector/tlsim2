@@ -513,7 +513,7 @@ class Circuit:
         :return: list of mode indices
         """
         modes = np.abs(self.element_epr(elements)) > threshold
-        freqs = np.imag(self.w)
+        freqs = np.imag(self.w).copy()
         if only_positives:
             positive_frequencies_mask = freqs > 0
         else:
