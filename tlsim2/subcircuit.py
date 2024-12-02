@@ -26,6 +26,7 @@ class Subcircuit:
         self.c = np.zeros((0, 0))
         self.ri = np.zeros((0, 0))
         self.node_names_el = None
+        self.modes = {}
 
         if isinstance(modes, Mapping):
             self.modes = modes
@@ -35,22 +36,41 @@ class Subcircuit:
             self.compute_element_licri()
         else:
             self.cutoff_low, self.cutoff_high = modes
-            self.update_modes()
+            self.update_modes(project_on_old_modes=False)
 
         self.name = self.circuit.name
 
-    def update_modes(self, recalculate_circuit=True):
+    def update_modes(self, recalculate_circuit=True, project_on_old_modes=True):
         if recalculate_circuit:
             self.circuit.compute_system_modes()
 
-        mode_mask = np.logical_and(np.imag(self.circuit.w) >= self.cutoff_low,
-                                   np.imag(self.circuit.w) <= self.cutoff_high)
-        if not self.cutoff_low > 0:
-            mode_mask = np.logical_or(mode_mask, np.isnan(self.circuit.w))
-
         modes = self.circuit.v[:self.circuit.v.shape[0] // 2, :]
-        modes = modes[:, mode_mask]
-        mode_eigenvals = self.circuit.w[mode_mask]
+
+        projection_failed = False
+        if not (len(self.modes) > 0 and project_on_old_modes):
+            projection_failed = True
+        else:
+            old_modes_keys = list(self.modes.keys())
+            old_modes_matrix = [self.modes[key] for key in old_modes_keys]
+            projections = np.conj(old_modes_matrix)@modes
+            projected_modes = np.argmax(np.abs(projections), axis=1)
+            if len(set(projected_modes)) != len(projected_modes):
+                projection_failed = True
+            # for old_mode_id, old_mode_key in enumerate(old_modes_keys):
+            for mode_id in range(modes.shape[1]):
+                max_entry_id = np.argmax(modes[:, mode_id])
+                modes[:, mode_id] = modes[:, mode_id]*np.exp(-1j*np.angle(modes[max_entry_id, mode_id]))
+            modes = modes[:, projected_modes]
+            mode_eigenvals = self.circuit.w[projected_modes]
+
+        if projection_failed:
+            mode_mask = np.logical_and(np.imag(self.circuit.w) >= self.cutoff_low,
+                                       np.imag(self.circuit.w) <= self.cutoff_high)
+            if not self.cutoff_low > 0:
+                mode_mask = np.logical_or(mode_mask, np.isnan(self.circuit.w))
+
+            modes = modes[:, mode_mask]
+            mode_eigenvals = self.circuit.w[mode_mask]
 
         self.modes = {mode_id: modes[:, mode_id] for mode_id in range(modes.shape[1])}
         self.mode_eigenvals = {mode_id: mode_eigenvals[mode_id] for mode_id in range(mode_eigenvals.shape[0])}
