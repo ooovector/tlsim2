@@ -56,6 +56,8 @@ class Subcircuit:
             projected_modes = np.argmax(np.abs(projections), axis=1)
             if len(set(projected_modes)) != len(projected_modes):
                 projection_failed = True
+
+        if not projection_failed:
             # for old_mode_id, old_mode_key in enumerate(old_modes_keys):
             for mode_id in range(modes.shape[1]):
                 max_entry_id = np.argmax(modes[:, mode_id])
