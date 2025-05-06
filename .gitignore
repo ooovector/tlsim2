@@ -1,5 +1,6 @@
 /venv/
 /tlsim2/__pycache__/
 /tlsim2/deprecated/
+/tlsim2.egg-info
 /example_notebooks/.ipynb_checkpoints/
 /.idea
