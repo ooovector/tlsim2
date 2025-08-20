@@ -6,7 +6,7 @@ from math import factorial
 
 class LumpedTwoTerminal(LinearElement):
     def __init__(self, name, l: float = np.inf, c: float = 0, r: float = np.inf,
-                 coupler_hint=False, keep_top_level=False):
+                 coupler_hint=False, keep_top_level=False, cfg_node=()):
         """
 
         :param name:
@@ -25,6 +25,7 @@ class LumpedTwoTerminal(LinearElement):
         self.terminal_names = ['i', 'o']
         self.coupler_hint = coupler_hint
         self.keep_top_level = keep_top_level
+        self.cfg_node = cfg_node
 
     def get_element_licri(self):
         li = np.asarray([[1 / self.l, -1 / self.l], [-1 / self.l, 1 / self.l]])
