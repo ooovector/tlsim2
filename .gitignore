@@ -1,5 +1,28 @@
-/venv/
+# Editor files
+.idea
+/.vscode
+
+# Documentation and example files
+*.html
+/example_notebooks/.ipynb_checkpoints/
+
+# Packaging files
+build
+dist
+
+# Compiled files
+*.pyc
+tlsim2.egg-info/
 /tlsim2/__pycache__/
 /tlsim2/deprecated/
-/example_notebooks/.ipynb_checkpoints/
-/.idea
+
+# Development files
+*.egg
+*.egg-info/
+*.ipynb_checkpoints
+.ropeproject/
+.mypy_cache/
+/venv/
+
+# MacOS files
+*.DS_Store
