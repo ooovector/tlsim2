@@ -1,9 +1,30 @@
 import unittest
 import numpy as np
-from tlsim2.tl import default_tl_basis, MultiTransmissionLine
+from tlsim2.tl import default_tl_basis, MultiTransmissionLine, MultiTransmissionLineFromGeometry
 from tlsim2.lumped import LumpedTwoTerminal
 from tlsim2.circuit import Circuit
 from matplotlib import pyplot as plt
+
+
+class TestComponents(unittest.TestCase):
+
+    def setUp(self):
+        self.tl_coupler = MultiTransmissionLineFromGeometry(name='tl_coupler', widths=[7., 7.], gaps=[4., 4., 4.],
+                                                            length=300.)
+
+
+    def test_components(self):
+
+        # capacitance matrix per pF/m
+        cl = np.asarray([[165.676,	-58.753],
+                         [-58.753,	165.676]])
+
+        # inductance matrix per nH/m
+        ll = np.asarray([[478.197, 	169.581],
+                         [169.581,	478.197]])
+
+        np.testing.assert_allclose(cl, self.tl_coupler.cl * 1e12 / 1e-6, rtol=1e-4, atol=1e-5)
+        np.testing.assert_allclose(ll, self.tl_coupler.ll * 1e9 / 1e-6, rtol=1e-4, atol=1e-5)
 
 
 class CircuitTest(unittest.TestCase):

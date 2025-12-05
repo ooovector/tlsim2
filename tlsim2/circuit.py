@@ -3,11 +3,13 @@ from abc import abstractmethod
 from scipy.linalg import pinv, eig
 from scipy.sparse.linalg import eigs
 from scipy.optimize import fsolve
-from typing import List, Mapping, Any, Iterable
+from typing import List, Mapping, Any, Iterable, Union, TypeAlias
 from collections import OrderedDict
 from scipy.constants import h, hbar, e
 from matplotlib import pyplot as plt
-from .linear import LinearElement
+from .linear import LinearElement, CircuitElement
+
+NodeType: TypeAlias =  Union[int, str]
 
 
 class Circuit:
@@ -56,7 +58,7 @@ class Circuit:
     def short(self, node):
         self.shorted_nodes.append(node)
 
-    def add_element(self, element, connection):
+    def add_element(self, element: CircuitElement, connection: Mapping[str, NodeType]):
         if element.name in self.elements:
             raise ValueError(f'Element with name {element.name} already in Circuit')
         self.elements[element.name] = element

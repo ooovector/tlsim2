@@ -1,8 +1,10 @@
 from __future__ import annotations
+
+from .conformal_mapping import ConformalMapping
 from .poly_exponent import PolyExponent, poly_exponent_complex
 from .linear import LinearElement
 from .basis import LinearHull
-from typing import Iterable, Union, Mapping
+from typing import Iterable, Union, Mapping, Sequence, Tuple
 from .field_distribution import FieldDistribution
 import numpy as np
 from functools import cache
@@ -191,4 +193,59 @@ class MultiTransmissionLine(LinearElement):
             return list(self.assign_loose_nodes(subsystems=subsystems).values())
         else:
             return [self.get_terminal_names()]
+
+
+
+
+class MultiTransmissionLineFromGeometry(MultiTransmissionLine):
+
+    def __init__(self, name: str, widths: Sequence[float], gaps: Sequence[float], length: float, **kwargs):
+        """
+        Represents a multi-conductor transmission line defined by its physical geometry.
+
+        Parameters:
+            name (str): Name identifier for the transmission line.
+            widths (Sequence[float]): Widths of the conductors in micrometers (µm).
+            gaps (Sequence[float]): Gaps between conductors and between the outer edges and the outermost conductors,
+                                     in micrometers (µm). Must contain one more element than `widths`.
+            length (float): Length of the transmission line in micrometers (µm).
+            **kwargs: Additional keyword arguments passed to the `MultiTransmissionLine` constructor.
+
+        Attributes:
+            widths (Tuple[float, ...]): Tuple of conductor widths in micrometers.
+            gaps (Tuple[float, ...]): Tuple of gaps in micrometers.
+
+        Raises:
+            AssertionError: If the number of gaps is not one more than the number of widths.
+        """
+
+        conductors_num = len(widths)
+
+        assert conductors_num + 1 == len(gaps)
+
+        elements = []
+        for i in range(conductors_num):
+            elements.append(gaps[i])
+            elements.append(widths[i])
+
+        elements.append(gaps[-1])
+
+        conformal_mapping_calculator = ConformalMapping(elements)
+
+        # capacitance matrix in F/µm, inductance matrix in H/µm
+        capacitance_matrix, inductance_matrix = conformal_mapping_calculator.cl_and_Ll()
+
+        del conformal_mapping_calculator
+
+        super().__init__(name, conductors_num, l=length, ll=inductance_matrix, cl=capacitance_matrix, **kwargs)
+        self._widths = tuple(widths)
+        self._gaps = tuple(gaps)
+
+    @property
+    def widths(self) -> Tuple[float, ...]:
+        return self._widths
+
+    @property
+    def gaps(self) -> Tuple[float, ...]:
+        return self._gaps
 
