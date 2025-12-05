@@ -299,6 +299,30 @@ class Circuit:
 
         return element_modes
 
+    def element_energies(self, elements, modes=None, return_losses=False):
+        """
+        Return mode ids in order of participation of elements
+        :param elements: elements to search for modes
+        :return:
+        """
+        element_energies = []
+        element_losses = []
+        total_energies = []
+        li_el, c_el, ri_el, node_names = self.get_system_licri(elements)
+        li, c, ri, node_names = self.get_system_licri()
+
+        if modes is None:
+            modes = self.v
+
+        for mode_id in range(modes.shape[1]):
+            voltages = modes[modes.shape[0]//2:, mode_id]
+            phases = modes[:modes.shape[0]//2, mode_id]
+            element_energies.append(np.conj(phases).T@li_el@phases + np.conj(voltages).T@c_el@voltages)
+            element_losses.append(np.conj(voltages).T@ri_el@voltages)
+            total_energies.append(np.conj(phases).T@li@phases + np.conj(voltages).T@c@voltages)
+
+        return element_energies
+
     def element_epr(self, elements, modes=None, return_losses=False):
         """
         Return mode ids in order of participation of elements
