@@ -210,6 +210,63 @@ class Circuit:
 
         return w*np.sqrt(max_li/max_c), v, node_names
 
+    def get_s(self, omega: Iterable[float], ports: Iterable[LinearElement]) -> np.ndarray:
+        """
+        Compute S-matrix with respect to ports
+        :param omega: radial frequencies
+        :param terminals: circuit elements that need to be replaced by ports, in order of appearance in effective S-matrix
+        :return: np.ndarray(len(omega), len(terminals), len(terminals)) of frequency-dependent S-matrices
+        """
+        #check that ports are grounded LumpedTwoTerminals
+        connected_nodes = []
+        for p in ports:
+            if p in self.elements:
+                p = self.elements[p]
+            num_connections = 0
+            for element_terminal, node_name in self.connections[p.name].items():
+                if node_name not in self.shorted_nodes:
+                    num_connections += 1
+                    connected_nodes.append(node_name)
+            if num_connections != 1:
+                raise Exception(f"Element {p.name} has more that one non-grounded terminal. Could not install port.")
+
+        omega = np.reshape(omega, (-1, 1, 1))
+
+        # getting y-matrix for all elements that are not the ports
+        li, c, ri, node_names = self.get_system_licri(
+            element_mask=[e for name, e in self.elements.items()
+                          if e not in ports and name not in ports])
+        y = li / (1j * omega) + c * 1j * omega + ri
+
+        # getting y-matrix for all elements that are the ports
+        y0 = np.zeros((len(omega), len(ports), len(ports)), dtype=complex)
+        for port_id, p in enumerate(ports):
+            if p in self.elements:
+                p = self.elements[p]
+            li_t, c_t, ri_t = p.get_element_licri()
+            y_t = li_t / (1j * omega) + c_t * 1j * omega + ri_t
+            terminal_names = p.get_terminal_names()
+            for t, n in self.connections[p.name].items():
+                if n not in self.shorted_nodes:
+                    y0[:, port_id, port_id] = y_t[:, terminal_names.index(t), terminal_names.index(t)]
+
+        #eliminate internal node voltages
+        retained_nodes = np.asarray([node_names.index(n) for n in connected_nodes], dtype=int)
+        eliminated_nodes = np.asarray([node_names.index(n) for n in node_names if n not in connected_nodes], dtype=int)
+
+        y_ii = y[:, eliminated_nodes, :][:, :, eliminated_nodes]
+        y_ip = y[:, eliminated_nodes, :][:, :, retained_nodes]
+        y_pi = y[:, retained_nodes, :][:, :, eliminated_nodes]
+        y_pp = y[:, retained_nodes, :][:, :, retained_nodes]
+        # y0_pp = y0[:, retained_nodes, :][:, :, retained_nodes]
+        # z0_pp = np.linalg.pinv(y0_pp)
+        z0 = np.linalg.pinv(y0)
+
+        i = np.identity(len(retained_nodes))
+        y_red = y_pp - y_pi @ np.linalg.inv(y_ii) @ y_ip
+        s = (i - z0@y_red)@np.linalg.pinv(i + z0@y_red)
+        return s
+
     def get_response(self, omega: Iterable[float], element_name_in: Any, element_names_out: Iterable[Any],
                      terminals_in: Mapping[Any, float] = None,
                      terminals_out: Iterable[Mapping[Any, float]] = None,
