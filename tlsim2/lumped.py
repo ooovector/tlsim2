@@ -72,3 +72,6 @@ class JosephsonJunction(NonlinearElement):
 
     def get_terminal_names(self):
         return self.terminal_names
+
+    def get_coupling_hints(self):
+        return [['i', 'o']]

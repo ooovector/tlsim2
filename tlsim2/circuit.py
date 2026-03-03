@@ -75,6 +75,25 @@ class Circuit:
 
         self.solution_valid = False
 
+    def remove_elements(self, names, clean_up_nodes=True):
+        for name in names:
+            if hasattr(self.elements[name], 'get_lagrangian_series'):
+                del self.nonlinear_elements[name]
+            del self.connections[name]
+            del self.elements[name]
+        self.solution_valid = False
+        if clean_up_nodes:
+            self.clean_up_nodes()
+
+    def clean_up_nodes(self):
+        nodes = [node for element_connections in self.connections.values() for node in element_connections.values()]
+        nodes = set(nodes)
+        if set(self.node_names) == nodes:
+            # nothing to clean up, the set of nodes from connections and that from the internal state are equivalent
+            return
+        self.node_names = [node for node in self.node_names if node in nodes]
+        self.solution_valid = False
+
     def get_num_dof(self):
         return len(self.node_names)
 
