@@ -42,7 +42,7 @@ class QuantumCircuit:
         modes = self.circuit.v
         modes = modes[:, w > 0]
 
-        epr_mat = np.empty((self.num_modes, self.num_nonlinear_elements))
+        epr_mat = np.empty((modes.shape[1], self.num_nonlinear_elements))
         for j, nonlinear_element in enumerate(self.circuit.nonlinear_elements.values()):
             element_epr = self.circuit.element_epr([nonlinear_element], modes=modes)
             epr_mat[:, j] = np.real(element_epr) * 2
