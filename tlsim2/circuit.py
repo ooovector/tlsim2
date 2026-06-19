@@ -353,6 +353,47 @@ class Circuit:
 
         return voltage_responses
 
+    def get_impedance(self, omega, nodes):
+        """
+        Returns impedance matrix of the provided nodes.
+        :param omega: iterable of radial frequencies
+        :param nodes: list of nodes
+        :return: array of impedances  of shape len(omega), len(nodes),
+            len(nodes)
+        """
+        li, c, ri, node_names = self.get_system_licri()
+        Y_mats = [(li * 1 / (1j * w) + c * (1j * w) + ri) for w in omega]
+        Z_mats = [np.linalg.pinv(Y_mat) for Y_mat in Y_mats]
+        Z_mats = np.array(Z_mats)
+        ind_list = [node_names.index(i) for i in nodes]
+        Z_mats_red = Z_mats[:, *np.ix_(ind_list, ind_list)]
+        return np.array(Z_mats_red)
+
+    def get_response_v2(self, omega, nodes, port_impedances=None):
+        """
+        Returns S-parameter matrix of the network between the provided nodes.
+
+        :param omega: iterable of radial frequencies
+        :param nodes: list of nodes as ports
+        :param port_impedances: list of port impedances, default (None) sets
+            all ports to 50 Ohm
+        :return: array of impedances of shape len(omega), len(nodes),
+            len(nodes)
+        """
+        identity = np.eye(len(nodes))
+        if not port_impedances:
+            Z0_sqrt = np.diag(np.sqrt([50] * len(nodes)))
+        else:
+            Z0_sqrt = np.diag(np.sqrt(port_impedances))
+        S_vals = []
+        zmats = self.get_impedance(omega, nodes)
+        for i, w in enumerate(omega):
+            Y = np.linalg.pinv(zmats[i])
+            ZYZ = Z0_sqrt @ Y @ Z0_sqrt
+            S_val = (identity - ZYZ) @ np.linalg.pinv(identity + ZYZ)
+            S_vals.append(S_val)
+        return np.array(S_vals)
+
     def system_modes_to_element_modes(self, system_modes, elements):
         node_names, circuit_connections = self.connections_circuit()
 
